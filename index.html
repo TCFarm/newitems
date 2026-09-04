@@ -49,6 +49,22 @@ main{padding:14px;max-width:1080px;margin:0 auto}
 .chip.warnc{background:#fdf1dc;color:var(--warn)}
 .chip.bad{background:#fdecea;color:var(--no)}
 .chip.good{background:#e7f5ec;color:var(--ok)}
+.idcol{min-width:0;flex:1 1 auto}
+.title{overflow-wrap:anywhere}
+.rowacts{display:flex;gap:5px;align-items:center;flex:0 0 auto}
+.rowacts input[type=number]{width:66px;height:38px;text-align:center;font-variant-numeric:tabular-nums}
+button.mini{width:38px;height:38px;padding:0;font-size:16px;line-height:1;border-radius:8px}
+button.mini.on[data-d=approve]{background:var(--ok);color:#fff;border-color:var(--ok)}
+button.mini.on[data-d=decline]{background:var(--no);color:#fff;border-color:var(--no)}
+button.mini.on[data-d=question]{background:var(--warn);color:#fff;border-color:var(--warn)}
+.row.decided{background:#fbfdfb}
+@media (max-width:640px){
+  .head{flex-wrap:wrap}
+  .nums{order:3;margin-left:0;text-align:left}
+  .rowacts{order:4;margin-left:auto}
+  .rowacts input[type=number],button.mini{height:44px}   /* iOS minimum tap target */
+  button.mini{width:44px}
+}
 .body{display:none;padding:0 12px 12px;border-top:1px solid var(--line)}
 .row.open .body{display:block}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:9px;margin:11px 0}
@@ -90,6 +106,7 @@ code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
 <main id="main"><div class="center">Loading…</div></main>
 <div class="foot">
   <span id="tally" class="mut">no decisions yet</span>
+  <span class="mut" style="font-size:12px">⛔ nothing is saved until you press Submit</span>
   <button class="primary" id="submit" disabled>Submit decisions</button>
   <span id="status" class="mut"></span>
 </div>
@@ -237,13 +254,26 @@ function rowHtml(r){
   const imgs=(r.rivir&&r.rivir.images||[]).map(u=>`<img src="${esc(u)}" alt="" loading="lazy">`).join("");
   const certs=(r.rivir&&r.rivir.certifications||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("");
   return `<div class="row ${r.demoted?"demoted":""}" data-upc="${esc(r.upc)}">
-   <div class="head" onclick="this.parentNode.classList.toggle('open')">
+   <div class="head" onclick="if(!event.target.closest('.rowacts'))this.parentNode.classList.toggle('open')">
      ${img}
-     <div><div class="title">${esc(r.description||"(no description)")}</div>
+     <div class="idcol"><div class="title">${esc(r.description||"(no description)")}</div>
        <div class="brand">${esc(r.brand||"")} · ${esc(r.subcategory||"")}</div>
        <div class="chips">${factorChips(r)}</div></div>
      <div class="nums"><div class="big">${money(r.price)}</div>
-       <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk · buy ${r.proposed_qty??"—"}</div></div>
+       <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk</div></div>
+     <!-- ⭐ DECIDE WITHOUT EXPANDING (Jack, 2026-09-04). The spec always said three
+          taps at card level; the first build buried them in the detail pane, so
+          working the list meant opening every row. `rowacts` stops the click from
+          toggling the row so a mis-tap never collapses what you are editing. -->
+     <div class="rowacts" onclick="event.stopPropagation()">
+       <input type="number" min="0" step="1" inputmode="numeric" aria-label="quantity"
+              value="${esc(qty)}" data-q="${esc(r.upc)}">
+       ${["approve","decline"].map(x=>
+         `<button class="mini ${d.decision===x?"on":""}" data-d="${x}" data-u="${esc(r.upc)}"
+                  aria-pressed="${d.decision===x}" title="${x}">${x==="approve"?"✓":"✕"}</button>`).join("")}
+       <button class="mini ${d.decision==="question"?"on":""}" data-d="question" data-u="${esc(r.upc)}"
+               aria-pressed="${d.decision==="question"}" title="ask a question">?</button>
+     </div>
    </div>
    <div class="body">
      <div class="grid">
@@ -295,6 +325,19 @@ function tally(){
 }
 
 /* ── interaction ──────────────────────────────────────────────────────── */
+/* ⛔⛔ CAPTURE EDITS AS THEY HAPPEN. Reading the quantity and the note only at
+   button-click meant "click approve, then change the quantity" submitted the OLD
+   number — real money — and "click question, then type the question" submitted an
+   empty question. Re-rendering (a tab switch) also discarded whatever was typed.
+   Found by an independent review, 2026-09-04. */
+document.addEventListener("input",e=>{
+  const q=e.target.closest("input[data-q]"), n=e.target.closest("textarea[data-n]");
+  const u=(q&&q.dataset.q)||(n&&n.dataset.n); if(!u) return;
+  const cur=DECIDED[u]; if(!cur) return;          /* nothing decided yet — nothing to update */
+  if(q) cur.approved_qty = q.value===""?null:Number(q.value);
+  if(n) cur.reviewer_note = n.value;
+  cur._dirty=true; tally();
+});
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-tab]");
   if(t){document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x===t));
@@ -309,7 +352,15 @@ document.addEventListener("click",e=>{
     DECIDED[u]={...cur,decision:b.dataset.d,
       approved_qty:qEl&&qEl.value!==""?Number(qEl.value):row.proposed_qty,
       reviewer_note:nEl?nEl.value:"",_dirty:true,_row:row};
-    b.parentNode.querySelectorAll("button[data-d]").forEach(x=>x.classList.toggle("on",x===b));
+    // ⭐ the same decision now exists in two places on one row (the collapsed
+    // controls and the detail pane) — repaint BOTH, or the row can show
+    // "approved" in one and nothing in the other.
+    const rowEl=b.closest(".row");
+    rowEl.querySelectorAll("button[data-d]").forEach(x=>{
+      const on = x.dataset.d===b.dataset.d;
+      x.classList.toggle("on",on); x.setAttribute("aria-pressed",on);
+    });
+    rowEl.classList.add("decided");
     tally();
   }
 });
@@ -319,6 +370,12 @@ document.getElementById("submit").addEventListener("click",async()=>{
   const id=await listId(); let ok=0,fail=0;
   for(const [upc,d] of Object.entries(DECIDED)){
     if(!d._dirty) continue;
+    /* ⭐ second capture: whatever is on screen right now wins over what was
+       recorded when the button was pressed. */
+    const qEl=document.querySelector(`input[data-q="${CSS.escape(upc)}"]`);
+    const nEl=document.querySelector(`textarea[data-n="${CSS.escape(upc)}"]`);
+    if(qEl && qEl.value!=="") d.approved_qty=Number(qEl.value);
+    if(nEl) d.reviewer_note=nEl.value;
     const r=d._row||{};
     const f={Title:`${PAYLOAD.meta.order_sunday}:${upc}`,
       order_sunday:PAYLOAD.meta.order_sunday, period:PAYLOAD.meta.period, upc,
@@ -331,7 +388,11 @@ document.getElementById("submit").addEventListener("click",async()=>{
       on_promo:String(!!r.on_promo), buy_start:r.buy_start||"", buy_end:r.buy_end||"",
       decision:d.decision, approved_qty:d.approved_qty??null,
       reviewer:account, decided_at:new Date().toISOString().slice(0,19),
-      reviewer_note:d.reviewer_note||"", drained:"false"};
+      reviewer_note:d.reviewer_note||""};
+    /* ⛔ `drained` is set ONLY on a brand-new row. Sending it on a PATCH reset an
+       already-drained decision, so the next drain re-processed it: the original
+       queue line stayed pending AND a second one was created. 24 + 12 = 36 units
+       ordered. Found by an independent review, 2026-09-04. */
     try{
       /* ⭐ idempotent on (order_sunday, upc): a second submit UPDATES. A
          duplicated approval would become a duplicated order. */
@@ -339,9 +400,21 @@ document.getElementById("submit").addEventListener("click",async()=>{
       if(ex) await graph(`/sites/${CFG.siteId}/lists/${id}/items/${ex}/fields`,
                          {method:"PATCH",body:JSON.stringify(f)});
       else {
-        const j=await graph(`/sites/${CFG.siteId}/lists/${id}/items`,
-                            {method:"POST",body:JSON.stringify({fields:f})});
-        DECIDED[upc]._id=j.id;
+        /* ⛔ CONCURRENT REVIEWERS: re-check by (order_sunday, upc) immediately
+           before creating. Two people on the page at once would otherwise create
+           two rows for one item and the drain would process both approvals. */
+        const chk=await graph(`/sites/${CFG.siteId}/lists/${id}/items?expand=fields`
+          +`&$top=200&$filter=fields/upc eq '${upc}'`).catch(()=>null);
+        const dup=chk&&(chk.value||[]).find(x=>(x.fields||{}).order_sunday===PAYLOAD.meta.order_sunday);
+        if(dup){
+          await graph(`/sites/${CFG.siteId}/lists/${id}/items/${dup.id}/fields`,
+                      {method:"PATCH",body:JSON.stringify(f)});
+          DECIDED[upc]._id=dup.id;
+        } else {
+          const j=await graph(`/sites/${CFG.siteId}/lists/${id}/items`,
+                              {method:"POST",body:JSON.stringify({fields:{...f,drained:"false"}})});
+          DECIDED[upc]._id=j.id;
+        }
       }
       DECIDED[upc]._dirty=false; ok++;
     }catch(err){ fail++; console.error(upc,err); }
