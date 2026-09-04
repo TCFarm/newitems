@@ -240,6 +240,23 @@ async function loadDecisions(sunday){
 
 const num = v => v===null||v===undefined||v===""?null:Number(v);
 
+/* ⭐⭐ THE ORDERABLE INCREMENT (Jack, 2026-09-04: "this lets me adjust quantities by
+   the individual units when this item probably needs to be ordered by the case").
+   ⛔ `UNIT_OF_SALE` is the orderable MINIMUM — the smallest quantity KeHE will
+   ship. `CASEPACK` is the MASTER case and is always a multiple of it.
+   ⛔ NEVER fall back `unit_of_sale || casepack`: that picks the LARGER increment
+   exactly when you know least, and turns a need for 12 into an order for 144.
+   The fallback is 1, and the row SAYS the increment is unknown. */
+function orderInc(r){
+  const v = String(r.unit_of_sale ?? "").trim().toUpperCase();
+  if(["EA","EACH","EAC","UN","UNIT"].includes(v)) return {inc:1, known:true};
+  const n = parseInt(v,10);
+  if(Number.isFinite(n) && n >= 1) return {inc:n, known:true};
+  return {inc:1, known:false};
+}
+/* round UP to the next orderable multiple — never down, or the order is short */
+const snapQty = (v,inc) => (!Number.isFinite(v)||v<=0) ? inc : Math.max(inc, Math.ceil(v/inc)*inc);
+
 /* one plain sentence: will it sell, and how sure are we */
 function sellLine(r){
   const u=num(r.proj_units_wk_calibrated), lo=num(r.proj_p10), hi=num(r.proj_p90),
@@ -331,6 +348,9 @@ function factorChips(r){
   if(r.demoted) c.push('<span class="chip bad">DEMOTED on the real price</span>');
   if(String(r.regular_cost_basis||"").includes("DERIVED"))
     c.push('<span class="chip warnc">cost derived, not quoted</span>');
+  {const oi=orderInc(r);
+   if(!oi.known) c.push('<span class="chip warnc">order increment unknown</span>');
+   else if(oi.inc>1) c.push(`<span class="chip">orders in ${oi.inc}s</span>`);}
   if(r.subcat_pick_number>1)
     c.push(`<span class="chip">#${r.subcat_pick_number} this week in ${esc(r.subcategory||"")}</span>`);
   return c.join("");
@@ -340,6 +360,7 @@ function rowHtml(r){
     ? `<img class="thumb" src="${esc(r.rivir.images[0])}" alt="" loading="lazy">`
     : `<div class="no-thumb">no image</div>`;
   const d=DECIDED[r.upc]||{};
+  const oi=orderInc(r);
   const qty=d.approved_qty??r.proposed_qty??"";
   const why=(r.why||[]).map(w=>`<li>${esc(w)}</li>`).join("");
   const qwhy=(r.proposed_qty_why||[]).map(w=>`<li>${esc(w)}</li>`).join("");
@@ -359,8 +380,10 @@ function rowHtml(r){
           working the list meant opening every row. `rowacts` stops the click from
           toggling the row so a mis-tap never collapses what you are editing. -->
      <div class="rowacts" onclick="event.stopPropagation()">
-       <input type="number" min="0" step="1" inputmode="numeric" aria-label="quantity"
-              value="${esc(qty)}" data-q="${esc(r.upc)}">
+       <input type="number" min="${oi.inc}" step="${oi.inc}" inputmode="numeric"
+              aria-label="quantity, orderable in ${oi.inc}s"
+              title="${oi.known?`orders in multiples of ${oi.inc}`:"increment unknown — verify before sending"}"
+              value="${esc(qty)}" data-q="${esc(r.upc)}" data-inc="${oi.inc}">
        ${["approve","decline"].map(x=>
          `<button class="mini ${d.decision===x?"on":""}" data-d="${x}" data-u="${esc(r.upc)}"
                   aria-pressed="${d.decision===x}" title="${x}">${x==="approve"?"✓":"✕"}</button>`).join("")}
@@ -396,7 +419,12 @@ function rowHtml(r){
        <p class="mut small">${esc(r.regular_cost_basis||"")}</p>
      </details>
      <div class="acts">
-       <label>Quantity <input type="number" min="0" step="1" value="${esc(qty)}" data-q="${esc(r.upc)}"></label>
+       <label>Quantity <input type="number" min="${oi.inc}" step="${oi.inc}"
+              inputmode="numeric" value="${esc(qty)}" data-q="${esc(r.upc)}"
+              data-inc="${oi.inc}"></label>
+       <span class="mut small">${oi.known
+          ? (oi.inc>1?`orders in ${oi.inc}s`:"orders in singles")
+          : "⚠️ increment unknown — verify before sending"}</span>
        ${["approve","decline","defer","question"].map(x=>
          `<button data-d="${x}" data-u="${esc(r.upc)}" class="${d.decision===x?"on":""}">${x}</button>`).join("")}
      </div>
@@ -432,6 +460,22 @@ function tally(){
    number — real money — and "click question, then type the question" submitted an
    empty question. Re-rendering (a tab switch) also discarded whatever was typed.
    Found by an independent review, 2026-09-04. */
+/* ⭐ snap to a real orderable quantity when the field loses focus — typing is not
+   fought mid-keystroke, but nothing invalid survives. Rounds UP: a short order is
+   worse than one extra minimum. */
+document.addEventListener("change",e=>{
+  const q=e.target.closest("input[data-q]"); if(!q) return;
+  const inc=parseInt(q.dataset.inc||"1",10)||1;
+  const was=Number(q.value), now=snapQty(was,inc);
+  if(now!==was){
+    q.value=now;
+    const s=document.getElementById("status");
+    if(s) s.textContent=`${was} is not orderable — rounded up to ${now} (multiples of ${inc}).`;
+  }
+  const u=q.dataset.q, cur=DECIDED[u];
+  if(cur){ cur.approved_qty=now; cur._dirty=true; tally(); }
+  document.querySelectorAll(`input[data-q="${CSS.escape(u)}"]`).forEach(x=>x.value=now);
+});
 document.addEventListener("input",e=>{
   const q=e.target.closest("input[data-q]"), n=e.target.closest("textarea[data-n]");
   const u=(q&&q.dataset.q)||(n&&n.dataset.n); if(!u) return;
@@ -476,7 +520,11 @@ document.getElementById("submit").addEventListener("click",async()=>{
        recorded when the button was pressed. */
     const qEl=document.querySelector(`input[data-q="${CSS.escape(upc)}"]`);
     const nEl=document.querySelector(`textarea[data-n="${CSS.escape(upc)}"]`);
-    if(qEl && qEl.value!=="") d.approved_qty=Number(qEl.value);
+    // ⛔ final guard: never submit a quantity the vendor will not ship.
+    if(qEl && qEl.value!==""){
+      const inc=parseInt(qEl.dataset.inc||"1",10)||1;
+      d.approved_qty=snapQty(Number(qEl.value),inc);
+    }
     if(nEl) d.reviewer_note=nEl.value;
     const r=d._row||{};
     const f={Title:`${PAYLOAD.meta.order_sunday}:${upc}`,
