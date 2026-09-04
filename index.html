@@ -377,8 +377,10 @@ function rowHtml(r){
        <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk</div></div>
      <!-- ⭐ DECIDE WITHOUT EXPANDING (Jack, 2026-09-04). The spec always said three
           taps at card level; the first build buried them in the detail pane, so
-          working the list meant opening every row. `rowacts` stops the click from
-          toggling the row so a mis-tap never collapses what you are editing. -->
+          working the list meant opening every row. The rowacts wrapper stops the
+          click from toggling the row so a mis-tap never collapses what you are
+          editing. NOTE: no backticks in here - this comment sits INSIDE a template
+          literal, and a stray backtick terminates it and breaks the whole file. -->
      <div class="rowacts" onclick="event.stopPropagation()">
        <input type="number" min="${oi.inc}" step="${oi.inc}" inputmode="numeric"
               aria-label="quantity, orderable in ${oi.inc}s"
