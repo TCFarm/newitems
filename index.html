@@ -1,0 +1,375 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New items to review — TC Farm</title>
+<!--
+  New-item weekly review.  OWNER: Procurement & Merchandising
+  Spec: Claude Files/Procurement & Merchandising/PROPOSAL-2026-09-02-newitem-weekly-app.md
+
+  ⛔ THIS REPO HOLDS PAGE CODE ONLY. No product data, no costs, no margins are
+  committed here. Everything is fetched from the Claude Agents SharePoint site
+  AFTER a Microsoft sign-in, which is the bar Jack set: "there is a credential
+  someone has to log in to so that a random member of the public can't guess the
+  URL and be able to see the data."  A public URL is therefore harmless.
+
+  ⛔ Nothing on this page orders anything. Submitting records a DECISION; the
+  Tuesday drain turns approvals into ProductPipeline work and scheduled-order-queue
+  lines, and a human still approves the order sheet itself.
+-->
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--mut:#5b6472;--line:#e3e6ea;
+      --ok:#0f7b3f;--no:#b3261e;--warn:#8a5a00;--accent:#1a4fd6;--chip:#eef2fb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);
+       padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:650}
+.sub{color:var(--mut);font-size:12px}
+.tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.tab{padding:6px 11px;border-radius:7px;border:1px solid var(--line);background:var(--card);
+     cursor:pointer;font-size:13px}
+.tab[aria-selected=true]{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{padding:14px;max-width:1080px;margin:0 auto}
+.banner{background:#fff8e6;border:1px solid #f0dca8;color:var(--warn);padding:9px 12px;
+        border-radius:8px;margin-bottom:12px;font-size:13px}
+.row{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:9px;
+     overflow:hidden}
+.row.demoted{opacity:.72;border-color:#e7cfcd}
+.head{display:flex;gap:11px;padding:10px 12px;align-items:flex-start;cursor:pointer}
+.thumb{width:52px;height:52px;border-radius:7px;object-fit:contain;background:var(--chip);flex:0 0 auto}
+.no-thumb{width:52px;height:52px;border-radius:7px;background:var(--chip);flex:0 0 auto;
+          display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:10px}
+.title{font-weight:620}
+.brand{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.02em}
+.nums{margin-left:auto;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.big{font-size:15px;font-weight:650}
+.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.chip{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--chip);color:#31405e}
+.chip.warnc{background:#fdf1dc;color:var(--warn)}
+.chip.bad{background:#fdecea;color:var(--no)}
+.chip.good{background:#e7f5ec;color:var(--ok)}
+.body{display:none;padding:0 12px 12px;border-top:1px solid var(--line)}
+.row.open .body{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:9px;margin:11px 0}
+.cell{background:#fafbfc;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+.cell b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.cell span{color:var(--mut);font-size:11px}
+.why{margin:9px 0;padding-left:16px}
+.why li{margin:2px 0;color:#39414f;font-size:13px}
+.acts{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:10px}
+button{font:inherit;padding:7px 13px;border-radius:7px;border:1px solid var(--line);
+       background:var(--card);cursor:pointer}
+button.on[data-d=approve]{background:var(--ok);color:#fff;border-color:var(--ok)}
+button.on[data-d=decline]{background:var(--no);color:#fff;border-color:var(--no)}
+button.on[data-d=defer]{background:#5b6472;color:#fff;border-color:#5b6472}
+button.on[data-d=question]{background:var(--warn);color:#fff;border-color:var(--warn)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+input[type=number],textarea{font:inherit;padding:6px 8px;border:1px solid var(--line);
+                            border-radius:7px;background:var(--card)}
+input[type=number]{width:88px}
+textarea{width:100%;margin-top:7px;min-height:52px}
+.imgs{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}
+.imgs img{width:104px;height:104px;object-fit:contain;background:var(--chip);border-radius:7px}
+.foot{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
+      padding:9px 14px;display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+.mut{color:var(--mut)}
+.center{text-align:center;padding:50px 16px;color:var(--mut)}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+
+<header>
+  <div><h1>New items to review</h1><div class="sub" id="sub">signing in…</div></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="reco" aria-selected="true">Recommended</button>
+    <button class="tab" role="tab" data-tab="all" aria-selected="false">Everything on promo</button>
+    <button class="tab" role="tab" data-tab="done" aria-selected="false">Decided</button>
+  </div>
+</header>
+<main id="main"><div class="center">Loading…</div></main>
+<div class="foot">
+  <span id="tally" class="mut">no decisions yet</span>
+  <button class="primary" id="submit" disabled>Submit decisions</button>
+  <span id="status" class="mut"></span>
+</div>
+
+<script>
+/* ── config ───────────────────────────────────────────────────────────────
+   ⛔ The clientId and tenantId are NOT secrets — they identify the app, they do
+   not authorise anything, and this is a PKCE SPA with no client secret. The data
+   is protected by the SharePoint ACL, not by hiding these.
+   ⚠️ The redirect URI for THIS page's exact URL must be registered on the Entra
+   app or sign-in fails with AADSTS50011. See the README. */
+const CFG = {
+  clientId: "4a5939ef-bb89-4629-8a95-007509bb11a5",   /* "TC Farm Receiving" */
+  tenantId: "c0f23c54-f515-4e2e-8aef-d3afb1ae34d0",
+  siteId: "tcfarm0.sharepoint.com,d5fe3f11-af72-4c8b-b877-80e69226ca49,753c3608-e66a-4ec6-9fdf-5fb646ffa4fa",
+  listName: "NewItemReview",
+  payloadDir: "NewItemReview",
+  scopes:["https://graph.microsoft.com/Sites.ReadWrite.All","offline_access","openid","profile"]
+};
+const AUTH=`https://login.microsoftonline.com/${CFG.tenantId}/oauth2/v2.0`;
+const GRAPH="https://graph.microsoft.com/v1.0";
+const store=sessionStorage;
+let token=null,tokenExp=0,refreshTok=null,account="";
+let PAYLOAD=null, ROWS=[], DECIDED={}, LISTID=null, TAB="reco";
+
+/* ── auth: authorization code + PKCE (same shape as the receiving page) ── */
+const rand=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);
+  return Array.from(a,b=>("0"+b.toString(16)).slice(-2)).join("")};
+const b64url=b=>btoa(String.fromCharCode(...new Uint8Array(b)))
+  .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const sha256=async s=>crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));
+async function beginLogin(){
+  const v=rand(64),c=b64url(await sha256(v)),st=rand(16);
+  store.setItem("pkce_v",v);store.setItem("pkce_s",st);
+  location.assign(`${AUTH}/authorize?`+new URLSearchParams({
+    client_id:CFG.clientId,response_type:"code",
+    redirect_uri:location.origin+location.pathname,response_mode:"query",
+    scope:CFG.scopes.join(" "),code_challenge:c,code_challenge_method:"S256",state:st}));
+}
+async function completeLogin(){
+  const q=new URLSearchParams(location.search),code=q.get("code");
+  if(q.get("error")) throw new Error(`${q.get("error")}: ${q.get("error_description")||""}`);
+  if(!code) return false;
+  if(q.get("state")!==store.getItem("pkce_s")) throw new Error("state mismatch — restart sign-in");
+  const r=await fetch(`${AUTH}/token`,{method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({client_id:CFG.clientId,grant_type:"authorization_code",code,
+      redirect_uri:location.origin+location.pathname,code_verifier:store.getItem("pkce_v")})});
+  const j=await r.json();
+  if(!r.ok) throw new Error(j.error_description||j.error||"token exchange failed");
+  setToken(j); history.replaceState({},"",location.pathname); return true;
+}
+function setToken(j){
+  token=j.access_token; tokenExp=Date.now()+(j.expires_in||3600)*1000-60000;
+  if(j.refresh_token) refreshTok=j.refresh_token;
+  try{account=JSON.parse(atob(j.id_token.split(".")[1])).preferred_username||"";}catch(_){}
+  store.setItem("tok",JSON.stringify({t:token,e:tokenExp,r:refreshTok,a:account}));
+}
+function loadToken(){try{const s=JSON.parse(store.getItem("tok")||"null");if(!s)return false;
+  token=s.t;tokenExp=s.e;refreshTok=s.r;account=s.a||"";return Date.now()<tokenExp;}catch(_){return false}}
+async function getToken(){
+  if(token&&Date.now()<tokenExp) return token;
+  if(refreshTok){
+    const r=await fetch(`${AUTH}/token`,{method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({client_id:CFG.clientId,grant_type:"refresh_token",
+        refresh_token:refreshTok,scope:CFG.scopes.join(" ")})});
+    const j=await r.json(); if(r.ok){setToken(j);return token;}
+  }
+  throw new Error("session expired — reload and sign in again");
+}
+async function graph(path,opts={}){
+  const t=await getToken();
+  const r=await fetch(GRAPH+path,{...opts,headers:{...(opts.headers||{}),
+    Authorization:"Bearer "+t,"Content-Type":"application/json"}});
+  const txt=await r.text(); let j=null; try{j=txt?JSON.parse(txt):null}catch(_){}
+  if(!r.ok) throw new Error((j&&(j.error?.message||j.error_description))||`${r.status} on ${path}`);
+  return j;
+}
+
+/* ── data ─────────────────────────────────────────────────────────────── */
+const fmt=(v,d=2)=>v===null||v===undefined||v===""?"—":Number(v).toFixed(d);
+const money=v=>v===null||v===undefined||v===""?"—":"$"+Number(v).toFixed(2);
+const pct=v=>v===null||v===undefined||v===""?"—":(Number(v)*100).toFixed(0)+"%";
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function loadPayload(){
+  /* newest payload in the folder — ⛔ never a hardcoded date, so the page shows
+     whatever the latest build published rather than silently going stale. */
+  const ls=await graph(`/sites/${CFG.siteId}/drive/root:/${CFG.payloadDir}:/children?$select=name,id`);
+  const files=(ls.value||[]).filter(f=>/^payload_.*\.json$/.test(f.name))
+                            .sort((a,b)=>a.name<b.name?1:-1);
+  if(!files.length) throw new Error("no payload has been published yet");
+  const t=await getToken();
+  const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${files[0].id}/content`,
+                      {headers:{Authorization:"Bearer "+t}});
+  if(!r.ok) throw new Error("payload download failed "+r.status);
+  return await r.json();
+}
+async function listId(){
+  if(LISTID) return LISTID;
+  const j=await graph(`/sites/${CFG.siteId}/lists?$select=displayName,id`);
+  const l=(j.value||[]).find(x=>x.displayName===CFG.listName);
+  if(!l) throw new Error(`list ${CFG.listName} not found`);
+  return (LISTID=l.id);
+}
+async function loadDecisions(sunday){
+  const id=await listId();
+  let url=`/sites/${CFG.siteId}/lists/${id}/items?expand=fields&$top=500`, out={};
+  while(url){
+    const j=await graph(url);
+    for(const it of j.value||[]){
+      const f=it.fields||{};
+      if(f.order_sunday===sunday) out[f.upc]={...f,_id:it.id};
+    }
+    const n=j["@odata.nextLink"]; url=n?n.replace(GRAPH,""):null;
+  }
+  return out;
+}
+
+/* ── render ───────────────────────────────────────────────────────────── */
+function factorChips(r){
+  const c=[];
+  if(r.on_promo) c.push('<span class="chip good">ON PROMO</span>');
+  if(r.carried_state==="lapsed") c.push('<span class="chip warnc">BRING-BACK — we carried this before</span>');
+  if(r.storage==="R") c.push('<span class="chip warnc">REFRIGERATED — tightest space</span>');
+  if(r.storage==="F") c.push('<span class="chip">frozen</span>');
+  if((r.our_units_wk_subcat||0)===0) c.push('<span class="chip good">fills a gap we don\'t serve</span>');
+  if(r.demoted) c.push('<span class="chip bad">DEMOTED on the real price</span>');
+  if(String(r.regular_cost_basis||"").includes("DERIVED"))
+    c.push('<span class="chip warnc">cost derived, not quoted</span>');
+  if(r.subcat_pick_number>1)
+    c.push(`<span class="chip">#${r.subcat_pick_number} this week in ${esc(r.subcategory||"")}</span>`);
+  return c.join("");
+}
+function rowHtml(r){
+  const img=(r.rivir&&r.rivir.images&&r.rivir.images[0])
+    ? `<img class="thumb" src="${esc(r.rivir.images[0])}" alt="" loading="lazy">`
+    : `<div class="no-thumb">no image</div>`;
+  const d=DECIDED[r.upc]||{};
+  const qty=d.approved_qty??r.proposed_qty??"";
+  const why=(r.why||[]).map(w=>`<li>${esc(w)}</li>`).join("");
+  const qwhy=(r.proposed_qty_why||[]).map(w=>`<li>${esc(w)}</li>`).join("");
+  const wn=(r.spins_why_not||[]).map(w=>`<li>${esc(typeof w==="string"?w:JSON.stringify(w))}</li>`).join("");
+  const imgs=(r.rivir&&r.rivir.images||[]).map(u=>`<img src="${esc(u)}" alt="" loading="lazy">`).join("");
+  const certs=(r.rivir&&r.rivir.certifications||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("");
+  return `<div class="row ${r.demoted?"demoted":""}" data-upc="${esc(r.upc)}">
+   <div class="head" onclick="this.parentNode.classList.toggle('open')">
+     ${img}
+     <div><div class="title">${esc(r.description||"(no description)")}</div>
+       <div class="brand">${esc(r.brand||"")} · ${esc(r.subcategory||"")}</div>
+       <div class="chips">${factorChips(r)}</div></div>
+     <div class="nums"><div class="big">${money(r.price)}</div>
+       <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk · buy ${r.proposed_qty??"—"}</div></div>
+   </div>
+   <div class="body">
+     <div class="grid">
+       <div class="cell"><b>${money(r.price)}</b><span>our price (${pct(r.target_margin)} category margin)</span></div>
+       <div class="cell"><b>${money(r.sale_price)}</b><span>on sale · ${pct(r.sale_margin)} margin</span></div>
+       <div class="cell"><b>${money(r.regular_cost)}</b><span>regular cost</span></div>
+       <div class="cell"><b>${money(r.promo_cost)}</b><span>promo cost</span></div>
+       <div class="cell"><b>${fmt(r.proj_units_wk_calibrated,2)}</b><span>units/wk (calibrated)</span></div>
+       <div class="cell"><b>${pct(r.p_clears_bar)}</b><span>chance it clears its bar</span></div>
+       <div class="cell"><b>${money(r.gp_13wk)}</b><span>gross profit, 13 weeks</span></div>
+       <div class="cell"><b>${fmt(r.our_units_wk_subcat,1)}</b><span>we sell / wk in this subcategory</span></div>
+     </div>
+     ${imgs?`<div class="imgs">${imgs}</div>`:""}
+     ${certs?`<div class="chips">${certs}</div>`:""}
+     <p class="mut" style="margin:9px 0 0">Why it ranks here</p><ul class="why">${why}</ul>
+     ${qwhy?`<p class="mut" style="margin:9px 0 0">How the quantity was set</p><ul class="why">${qwhy}</ul>`:""}
+     ${wn?`<p class="mut" style="margin:9px 0 0">Why SPINS does not list it as an add</p><ul class="why">${wn}</ul>`:""}
+     ${r.demote_reason?`<div class="banner">${esc(r.demote_reason)}</div>`:""}
+     ${r.carried_state==="lapsed"?`<div class="banner">We carried this before: ${esc(r.carried_why)}</div>`:""}
+     <div class="acts">
+       <label>Quantity <input type="number" min="0" step="1" value="${esc(qty)}" data-q="${esc(r.upc)}"></label>
+       ${["approve","decline","defer","question"].map(x=>
+         `<button data-d="${x}" data-u="${esc(r.upc)}" class="${d.decision===x?"on":""}">${x}</button>`).join("")}
+     </div>
+     <textarea placeholder="Note or question for Claude (optional)" data-n="${esc(r.upc)}">${esc(d.reviewer_note||"")}</textarea>
+   </div></div>`;
+}
+function visible(){
+  if(TAB==="done") return ROWS.filter(r=>DECIDED[r.upc]);
+  if(TAB==="reco") return ROWS.filter(r=>!DECIDED[r.upc]&&!r.demoted&&r.score!==null).slice(0,60);
+  return ROWS.filter(r=>!DECIDED[r.upc]);
+}
+function render(){
+  const m=document.getElementById("main"), v=visible();
+  const st=PAYLOAD.meta.spins_state||{};
+  let head="";
+  if(st.note) head+=`<div class="banner">${esc(st.note)}</div>`;
+  if(TAB==="all") head+=`<div class="banner">Every promo item we do not carry, ranked. Below the
+     recommended set these are shown for completeness — the order is the same score.</div>`;
+  m.innerHTML=head+(v.length?v.map(rowHtml).join(""):`<div class="center">nothing here</div>`);
+  tally();
+}
+function tally(){
+  const n=Object.keys(DECIDED).length;
+  const a=Object.values(DECIDED).filter(d=>d.decision==="approve").length;
+  document.getElementById("tally").textContent =
+    n?`${n} decided · ${a} to buy`:"no decisions yet";
+  document.getElementById("submit").disabled = !Object.values(DECIDED).some(d=>d._dirty);
+}
+
+/* ── interaction ──────────────────────────────────────────────────────── */
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-tab]");
+  if(t){document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x===t));
+        TAB=t.dataset.tab; render(); return;}
+  const b=e.target.closest("button[data-d]");
+  if(b){
+    e.stopPropagation();
+    const u=b.dataset.u, row=ROWS.find(r=>r.upc===u);
+    const cur=DECIDED[u]||{};
+    const qEl=document.querySelector(`input[data-q="${CSS.escape(u)}"]`);
+    const nEl=document.querySelector(`textarea[data-n="${CSS.escape(u)}"]`);
+    DECIDED[u]={...cur,decision:b.dataset.d,
+      approved_qty:qEl&&qEl.value!==""?Number(qEl.value):row.proposed_qty,
+      reviewer_note:nEl?nEl.value:"",_dirty:true,_row:row};
+    b.parentNode.querySelectorAll("button[data-d]").forEach(x=>x.classList.toggle("on",x===b));
+    tally();
+  }
+});
+document.getElementById("submit").addEventListener("click",async()=>{
+  const btn=document.getElementById("submit"), s=document.getElementById("status");
+  btn.disabled=true; s.textContent="submitting…";
+  const id=await listId(); let ok=0,fail=0;
+  for(const [upc,d] of Object.entries(DECIDED)){
+    if(!d._dirty) continue;
+    const r=d._row||{};
+    const f={Title:`${PAYLOAD.meta.order_sunday}:${upc}`,
+      order_sunday:PAYLOAD.meta.order_sunday, period:PAYLOAD.meta.period, upc,
+      brand:r.brand||"", item:r.description||"", subcategory:r.subcategory||"",
+      storage:r.storage||"", rank:r.rank??null, score:r.score??null,
+      gp_13wk:r.gp_13wk??null, price:r.price??null, regular_cost:r.regular_cost??null,
+      promo_cost:r.promo_cost??null, proposed_qty:r.proposed_qty??null,
+      proj_units_wk_calibrated:r.proj_units_wk_calibrated??null,
+      p_clears_bar:r.p_clears_bar??null, carried_state:r.carried_state||"",
+      on_promo:String(!!r.on_promo), buy_start:r.buy_start||"", buy_end:r.buy_end||"",
+      decision:d.decision, approved_qty:d.approved_qty??null,
+      reviewer:account, decided_at:new Date().toISOString().slice(0,19),
+      reviewer_note:d.reviewer_note||"", drained:"false"};
+    try{
+      /* ⭐ idempotent on (order_sunday, upc): a second submit UPDATES. A
+         duplicated approval would become a duplicated order. */
+      const ex=DECIDED[upc]._id;
+      if(ex) await graph(`/sites/${CFG.siteId}/lists/${id}/items/${ex}/fields`,
+                         {method:"PATCH",body:JSON.stringify(f)});
+      else {
+        const j=await graph(`/sites/${CFG.siteId}/lists/${id}/items`,
+                            {method:"POST",body:JSON.stringify({fields:f})});
+        DECIDED[upc]._id=j.id;
+      }
+      DECIDED[upc]._dirty=false; ok++;
+    }catch(err){ fail++; console.error(upc,err); }
+  }
+  s.textContent = fail?`⛔ ${ok} saved, ${fail} FAILED — see the console and retry`
+                      :`✓ ${ok} decision(s) saved`;
+  tally(); render();
+});
+
+/* ── boot ─────────────────────────────────────────────────────────────── */
+(async()=>{
+  const sub=document.getElementById("sub");
+  try{
+    if(!loadToken()){ if(!await completeLogin()){ await beginLogin(); return; } }
+    sub.textContent="loading the week…";
+    PAYLOAD=await loadPayload();
+    ROWS=PAYLOAD.rows||[];
+    DECIDED=await loadDecisions(PAYLOAD.meta.order_sunday);
+    for(const k of Object.keys(DECIDED)) DECIDED[k]._row=ROWS.find(r=>r.upc===k);
+    const m=PAYLOAD.meta;
+    sub.textContent=`order ${m.order_sunday} · ${ROWS.length} candidates · `
+      +`${(m.carried_counts||{}).lapsed||0} bring-backs · signed in as ${account}`;
+    render();
+  }catch(e){
+    document.getElementById("main").innerHTML=
+      `<div class="center">⛔ ${esc(e.message)}<br><br>
+       <button onclick="sessionStorage.clear();location.href=location.pathname">sign in again</button></div>`;
+    sub.textContent="not signed in";
+  }
+})();
+</script>
