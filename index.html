@@ -72,6 +72,10 @@ button.mini.on[data-d=question]{background:var(--warn);color:#fff;border-color:v
 .cell b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
 .cell span{color:var(--mut);font-size:11px}
 .why{margin:9px 0;padding-left:16px}
+.lead{margin:9px 0;font-size:14px;line-height:1.5}
+.small{font-size:12px}
+details.raw{margin-top:10px}
+details.raw summary{cursor:pointer;padding:4px 0}
 .why li{margin:2px 0;color:#39414f;font-size:13px}
 .acts{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:10px}
 button{font:inherit;padding:7px 13px;border-radius:7px;border:1px solid var(--line);
@@ -227,6 +231,95 @@ async function loadDecisions(sunday){
   return out;
 }
 
+
+/* ── ⭐ SUMMARISE, DO NOT DUMP (Jack, 2026-09-04: "it's just kind of a bunch of
+   garbage ... needs to be summarized in a concise manner to be realistic for
+   someone to read and get the information they need in one go").
+   ⛔ The first build rendered `why_not` with JSON.stringify — four lines of raw
+   objects a human cannot read. These turn the same data into sentences. ── */
+
+const num = v => v===null||v===undefined||v===""?null:Number(v);
+
+/* one plain sentence: will it sell, and how sure are we */
+function sellLine(r){
+  const u=num(r.proj_units_wk_calibrated), lo=num(r.proj_p10), hi=num(r.proj_p90),
+        bar=num(r.min_units_wk), p=num(r.p_clears_bar);
+  if(u===null) return "No velocity projection — this item cannot be sized from the market data.";
+  let t=`Expect about <b>${u.toFixed(1)} a week</b>`;
+  if(lo!==null&&hi!==null) t+=` (could be ${lo.toFixed(1)}–${hi.toFixed(1)})`;
+  if(bar!==null) t+= u>=bar ? `, above the ${bar.toFixed(1)}/wk floor for its department`
+                            : `, <b>below</b> the ${bar.toFixed(1)}/wk floor for its department`;
+  if(p!==null) t+=` — ${Math.round(p*100)}% of items like this clear that floor.`;
+  else t+=".";
+  if(r.beyond_fitted_range) t+=` ⚠️ This projection is beyond anything the model was fitted on`
+    + (r.max_fitted_proj?` (max ${num(r.max_fitted_proj).toFixed(1)}/wk)`:``)
+    + `, so treat it as a hypothesis and buy small.`;
+  return t;
+}
+
+/* one plain sentence: what we make on it */
+function moneyLine(r){
+  const pr=num(r.price), mg=num(r.margin_regular), sp=num(r.sale_price),
+        sm=num(r.sale_margin), rc=num(r.regular_cost), pc=num(r.promo_cost);
+  if(pr===null) return "⛔ No price — we could not check whether the margin works.";
+  let t=`Sell at <b>${money(pr)}</b>`;
+  if(rc!==null) t+=` on a ${money(rc)} cost`;
+  if(mg!==null) t+=` — <b>${Math.round(mg*100)}% margin</b>`;
+  t+=".";
+  if(sp!==null) t+=` On promo: ${money(sp)}`+(sm!==null?` (${Math.round(sm*100)}% margin)`:``)
+    +(pc!==null?` while it costs ${money(pc)}`:``)+`.`;
+  return t;
+}
+
+/* one plain sentence: the buy */
+function buyLine(r){
+  const q=r.proposed_qty, u=num(r.proj_units_wk_calibrated);
+  if(q===null||q===undefined) return "";
+  const wks = (u&&u>0) ? (q/u) : null;
+  let t=`Buy <b>${q}</b>`;
+  if(wks) t+=` — about ${wks.toFixed(0)} week${wks>=1.5?"s":""} of cover`;
+  const cost=num(r.promo_cost)||num(r.regular_cost);
+  if(cost) t+=`, roughly ${money(q*cost)} committed`;
+  t+=".";
+  const cap=(r.proposed_qty_why||[]).find(w=>String(w).includes("DATING CAP"));
+  if(cap) t+=" ⚠️ Cut back so it clears before it dates out.";
+  return t;
+}
+
+/* the single strongest reason it sits where it does */
+function rankLine(r){
+  const c=(r.components||[]).filter(x=>Array.isArray(x)&&x[1]!==1);
+  if(!c.length) return "Ranked on expected households reached, with nothing pushing it up or down.";
+  c.sort((a,b)=>Math.abs(Math.log(b[1]||1))-Math.abs(Math.log(a[1]||1)));
+  const label={confidence:"confidence in the projection",trend:"market trend",
+    diversity:"it fills a gap we do not serve",promo_first:"first chance to buy it on this promo",
+    storage_scarcity:"storage space",crowding:"how many we have already picked here"};
+  return c.slice(0,3).map(([k,v])=>
+    `${label[k]||k} <b>${v>1?"×":"÷"}${(v>1?v:1/v).toFixed(2)}</b>`).join(" · ");
+}
+
+/* ⭐ SPINS gate failures as ENGLISH, not JSON */
+function whyNotLine(r){
+  const w=r.spins_why_not;
+  if(!w||!w.length) return "";
+  const tier={"P1-VALUE-TIER":"cheaper than anything we stock","P2-CATEGORY-GAP":"a category we stock nothing in",
+    "P3-VELOCITY-UPGRADE":"faster than our best seller here","P4-LOCAL-GEM":"a local brand"};
+  const bits=[];
+  for(const g of w){
+    const failed=(g.failed||[]).filter(f=>f && f.pass===false).slice(0,2);
+    if(!failed.length) continue;
+    const why=failed.map(f=>{
+      const have=(f.have===true?"yes":f.have===false?"no":f.have);
+      return `${f.gate} ${have}, needs ${f.need}`;
+    }).join("; ");
+    bits.push(`<b>${tier[g.gate]||g.gate}</b> — ${why}`);
+  }
+  if(!bits.length) return "";
+  return `SPINS does not list this as an add. It is looking for one of four things and this is `
+    + `none of them: ${bits.join(" · ")}. <span class="mut">That is about assortment gaps, `
+    + `not about whether it is worth buying.</span>`;
+}
+
 /* ── render ───────────────────────────────────────────────────────────── */
 function factorChips(r){
   const c=[];
@@ -276,23 +369,32 @@ function rowHtml(r){
      </div>
    </div>
    <div class="body">
-     <div class="grid">
-       <div class="cell"><b>${money(r.price)}</b><span>our price (${pct(r.target_margin)} category margin)</span></div>
-       <div class="cell"><b>${money(r.sale_price)}</b><span>on sale · ${pct(r.sale_margin)} margin</span></div>
-       <div class="cell"><b>${money(r.regular_cost)}</b><span>regular cost</span></div>
-       <div class="cell"><b>${money(r.promo_cost)}</b><span>promo cost</span></div>
-       <div class="cell"><b>${fmt(r.proj_units_wk_calibrated,2)}</b><span>units/wk (calibrated)</span></div>
-       <div class="cell"><b>${pct(r.p_clears_bar)}</b><span>chance it clears its bar</span></div>
-       <div class="cell"><b>${money(r.gp_13wk)}</b><span>gross profit, 13 weeks</span></div>
-       <div class="cell"><b>${fmt(r.our_units_wk_subcat,1)}</b><span>we sell / wk in this subcategory</span></div>
-     </div>
+     <p class="lead">${sellLine(r)}</p>
+     <p class="lead">${moneyLine(r)}</p>
+     <p class="lead">${buyLine(r)}</p>
      ${imgs?`<div class="imgs">${imgs}</div>`:""}
      ${certs?`<div class="chips">${certs}</div>`:""}
-     <p class="mut" style="margin:9px 0 0">Why it ranks here</p><ul class="why">${why}</ul>
-     ${qwhy?`<p class="mut" style="margin:9px 0 0">How the quantity was set</p><ul class="why">${qwhy}</ul>`:""}
-     ${wn?`<p class="mut" style="margin:9px 0 0">Why SPINS does not list it as an add</p><ul class="why">${wn}</ul>`:""}
      ${r.demote_reason?`<div class="banner">${esc(r.demote_reason)}</div>`:""}
-     ${r.carried_state==="lapsed"?`<div class="banner">We carried this before: ${esc(r.carried_why)}</div>`:""}
+     ${r.carried_state==="lapsed"?`<div class="banner">We carried this before — ${esc(r.carried_why)}</div>`:""}
+     ${(r.why||[]).filter(w=>String(w).includes("UNVIABLE")).map(w=>`<div class="banner">${esc(w)}</div>`).join("")}
+     <p class="mut small">Ranked by: ${rankLine(r)}</p>
+     ${whyNotLine(r)?`<p class="mut small">${whyNotLine(r)}</p>`:""}
+     <details class="raw"><summary class="mut small">every factor and figure</summary>
+       <div class="grid">
+         <div class="cell"><b>${money(r.price)}</b><span>our price</span></div>
+         <div class="cell"><b>${money(r.sale_price)}</b><span>on promo</span></div>
+         <div class="cell"><b>${money(r.regular_cost)}</b><span>regular cost</span></div>
+         <div class="cell"><b>${money(r.promo_cost)}</b><span>promo cost</span></div>
+         <div class="cell"><b>${fmt(r.proj_units_wk_calibrated,2)}</b><span>units/wk</span></div>
+         <div class="cell"><b>${pct(r.p_clears_bar)}</b><span>clears its floor</span></div>
+         <div class="cell"><b>${money(r.gp_13wk)}</b><span>13-week gross profit</span></div>
+         <div class="cell"><b>${fmt(r.our_units_wk_subcat,1)}</b><span>we sell/wk here</span></div>
+       </div>
+       <ul class="why">${why}</ul>
+       <ul class="why">${qwhy}</ul>
+       <p class="mut small">${esc(r.price_basis||"")}</p>
+       <p class="mut small">${esc(r.regular_cost_basis||"")}</p>
+     </details>
      <div class="acts">
        <label>Quantity <input type="number" min="0" step="1" value="${esc(qty)}" data-q="${esc(r.upc)}"></label>
        ${["approve","decline","defer","question"].map(x=>
