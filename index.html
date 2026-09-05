@@ -568,6 +568,27 @@ function tiles(r){
       tile(trendShort(r.distribution_trend),"distribution",
            r.nc_acv_growth_pct!=null?`${r.nc_acv_growth_pct>0?"+":""}${Math.round(r.nc_acv_growth_pct)}% ACV vs last year`:"",
            trendCls(r.distribution_trend))}
+    ${/* ⭐⭐ THE SECOND AXIS. ⛔ READ IT AS DISTRIBUTION ARRIVING, NOT VELOCITY —
+          SPINS corrected their own "2.5x forward units" headline on 2026-09-05:
+          that figure had no volume control. What holds inside every volume band
+          is forward SHELF gain (+0.561 ACV points against -0.036 for no lead).
+          ⛔ A NULL IS NOT A ZERO: null means SPINS has no coastal row at all,
+          which measured WORSE than a zero lead. */
+      tile(r.coast_lead_pts==null?null:(r.coast_lead_pts>0?"+":"")+Math.round(r.coast_lead_pts)+"pt",
+           "coast lead",
+           r.coast_lead_pts==null?"no coastal read"
+             :r.coast_lead_pts>=10?"the wave is heading here"
+             :r.coast_lead_pts<=-10?"we are ahead of the coasts":"in step with the coasts",
+           r.coast_lead_pts==null?"":(r.coast_lead_pts>=10?"good":""))}
+    ${/* ⭐⭐ THE STRONGEST PREDICTOR SPINS FOUND. Sporadic selling at real volume
+          is a discontinuation in progress — a MEDIAN OF ZERO units six quads on. */
+      tile(r.weeks_selling_quad==null?null:r.weeks_selling_quad+" of 4",
+           "weeks selling",
+           r.weeks_selling_quad==null?""
+             :r.weeks_selling_quad>=4?"sells every week"
+             :r.weeks_selling_quad<=2?"sporadic — a delist signal":"patchy",
+           r.weeks_selling_quad==null?"":(r.weeks_selling_quad>=4?"good"
+             :r.weeks_selling_quad<=2?"bad":"warn"))}
   </div>`;
 }
 
@@ -853,6 +874,8 @@ function rowHtml(r){
      ${compStrip(r)}
      ${r.outside_launch_evidence?`<div class="banner">⚠️ <b>Outside the model's evidence.</b> Only ${acvPct(r.nc_acv)} of stores carry this, below the ${
        r.launch_evidence_min_acv!=null?r.launch_evidence_min_acv.toFixed(1)+"%":"measured"} floor where 95% of our graded launches sit. SPINS could not validate a trajectory rule down here &mdash; their history holds one launch below 5% ACV. The projection is a hypothesis, not a forecast.</div>`:""}
+     ${(r.weeks_selling_quad!=null&&r.weeks_selling_quad<=2&&(num(r.nc_units_quad)||0)>=50)?`<div class="banner">⛔ <b>Selling in only ${r.weeks_selling_quad} of 4 weeks despite real volume.</b> On SPINS' held-out data that shape carries a <b>median of ZERO units</b> six quarters out &mdash; a discontinuation already in progress, not a slow start.</div>`:""}
+     ${(num(r.nc_price_growth_pct)!=null&&num(r.nc_price_growth_pct)<=-10)?`<div class="banner">⚠️ <b>Its market price is falling ${Math.abs(Math.round(r.nc_price_growth_pct))}%.</b> A falling unit price is the shape of an item being discounted toward a delist, not a bargain arriving.</div>`:""}
      ${r.distribution_trend==="BEING-DELISTED"?`<div class="banner">⛔ <b>Other retailers are dropping this.</b> SPINS classifies its distribution as BEING-DELISTED${
        r.nc_acv_growth_pct!=null?` (${Math.round(r.nc_acv_growth_pct)}% ACV in a year)`:""}.</div>`:""}
      <!-- ⛔ The prose that used to sit here is not deleted - it is the WHY behind
