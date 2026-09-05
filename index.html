@@ -71,6 +71,18 @@ button.mini.on[data-d=question]{background:var(--warn);color:#fff;border-color:v
 .cell{background:#fafbfc;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
 .cell b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
 .cell span{color:var(--mut);font-size:11px}
+.whatis{background:#f4f8ff;border:1px solid #cfe0f7;border-left:3px solid #3b76c9;
+  border-radius:7px;padding:9px 11px;margin:0 0 11px;font-size:14px;line-height:1.45}
+.whatis .fx{color:var(--mut);font-size:11.5px;margin-top:5px;display:block}
+.ptab{width:100%;border-collapse:collapse;font-size:12.5px;margin:7px 0}
+.ptab th{text-align:left;color:var(--mut);font-weight:600;font-size:11px;
+  border-bottom:1px solid var(--line);padding:4px 6px}
+.ptab td{padding:4px 6px;border-bottom:1px solid #f0f2f4;vertical-align:top}
+.ptab td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ptab tr.off td{color:var(--mut)}
+.ptab .me{background:#fff8e6}
+.pnote{color:var(--mut);font-size:11.5px;margin:4px 0 0}
+.pwrap{overflow-x:auto}
 .why{margin:9px 0;padding-left:16px}
 .lead{margin:9px 0;font-size:14px;line-height:1.5}
 .small{font-size:12px}
@@ -268,9 +280,16 @@ function sellLine(r){
                             : `, <b>below</b> the ${bar.toFixed(1)}/wk floor for its department`;
   if(p!==null) t+=` — ${Math.round(p*100)}% of items like this clear that floor.`;
   else t+=".";
-  if(r.beyond_fitted_range) t+=` ⚠️ This projection is beyond anything the model was fitted on`
+  /* ⛔ NEVER TELL THE REVIEWER TO ADJUST THE NUMBER (ruling: Jack, 2026-09-04):
+     "the qty recommended should be adjusted at the first pass, not telling the
+     user to adjust it - it is unclear what even to adjust to or why a user would
+     know better without having a good starting point." This used to end "so treat
+     it as a hypothesis and buy small", which is an instruction for something
+     newitem_qty ALREADY did (beyond_fitted_cover_weeks cuts cover to 3). State
+     what the model did; the number on the row is the answer. */
+  if(r.beyond_fitted_range) t+=` This projection is beyond anything the model was fitted on`
     + (r.max_fitted_proj?` (max ${num(r.max_fitted_proj).toFixed(1)}/wk)`:``)
-    + `, so treat it as a hypothesis and buy small.`;
+    + `, so the buy below is already sized as a probe rather than a forecast.`;
   return t;
 }
 
@@ -298,8 +317,107 @@ function buyLine(r){
   const cost=num(r.promo_cost)||num(r.regular_cost);
   if(cost) t+=`, roughly ${money(q*cost)} committed`;
   t+=".";
-  const cap=(r.proposed_qty_why||[]).find(w=>String(w).includes("DATING CAP"));
-  if(cap) t+=" ⚠️ Cut back so it clears before it dates out.";
+  /* ⛔⛔ NEVER TELL THE REVIEWER TO ADJUST THE NUMBER (ruling: Jack, 2026-09-04):
+     "these should never be there - the qty recommended should be adjusted at the
+     first pass, not telling the user to adjust it - it is unclear what even to
+     adjust to or why a user would know better without having a good starting
+     point." This read "Cut back so it clears before it dates out" - an instruction
+     for something newitem_qty had ALREADY done, sitting next to a shelf-life line
+     saying the quantity clears comfortably. The two contradicted each other and
+     neither said what to change it to. Now it states the cap as a fact, with the
+     numbers, so the reviewer can see WHY 6 and not 10. */
+  const cap=(r.proposed_qty_why||[]).find(w=>/sized down|DATING CAP/i.test(String(w)));
+  if(cap) t+=" "+esc(String(cap).replace(/^[^A-Za-z]*/,"")
+                                .replace(/^DATING CAP:\s*/i,"Sized down by shelf life: "))
+                                .replace(/^s/,"S")+".";
+  return t;
+}
+
+/* ⭐⭐ THE OBJECTIVE, SHOWN. BUSINESS-GOALS.md says the metric is grocery attach
+   and BASKET SIZE, not gross profit per SKU - and yet households reached was the
+   one number the pane never displayed (found 2026-09-04). A model that ranks on
+   something it never shows cannot be argued with. */
+function reachLine(r){
+  const h=num(r.households_wk), u=num(r.proj_units_wk_calibrated);
+  if(h===null) return "";
+  let t=`Reaches about <b>${h.toFixed(1)} household${h>=1.5?"s":""} a week</b>`;
+  if(u&&u>0) t+=` (${(h/u).toFixed(2)} per unit sold)`;
+  t+=".";
+  /* ⭐ THE CONTEXT THAT MAKES THE NUMBER MEAN SOMETHING. A unit is not a
+     household: in MODERN SODA people buy roughly four at a time, so volume there
+     buys almost no reach, while in BREAD LOAVES it is close to one to one.
+     Measured per subcategory by lib/newitem_reach. */
+  const P=(PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers)||{}, b=P[r.subcategory], rc=b&&b.reach;
+  if(rc&&rc.hh_per_unit!=null){
+    const hp=Number(rc.hh_per_unit);
+    t+=` In ${esc(r.subcategory||"this subcategory")} a unit reaches ${hp.toFixed(2)} households`;
+    t+= hp>=0.7 ? ` — people buy close to one at a time here, so volume does mean reach.`
+       : hp<=0.4 ? ` — people buy several at a time here, so volume buys little reach.`
+       : ` — partway between volume and reach.`;
+    if(rc.households_wk_total!=null&&rc.n_live)
+      t+= rc.n_live===1
+        ? ` The one live item on this shelf reaches about <b>${Number(rc.households_wk_total).toFixed(1)}</b> households a week.`
+        : ` The ${rc.n_live} live items on this shelf reach about <b>${Number(rc.households_wk_total).toFixed(1)}</b> households a week between them.`;
+  }
+  return t;
+}
+
+/* ⭐ THE DEADLINE. The ranking multiplies by "first chance to buy on this promo"
+   but the pane never said WHEN the window closes, so the reviewer could not see
+   that a yes next week costs regular price. */
+function windowLine(r){
+  if(!r.on_promo && !r.buy_end) return "";
+  const bits=[];
+  if(r.buy_start||r.buy_end) bits.push(`Deal window ${esc(r.buy_start||"?")} to ${esc(r.buy_end||"?")}`);
+  const w=num(r.promo_weeks);
+  if(w!==null&&w>0) bits.push(`<b>${w.toFixed(0)} week${w>=1.5?"s":""}</b> of buying left`);
+  if(!bits.length) return "";
+  let t=bits.join(" &middot; ")+".";
+  if(w!==null&&w<=1) t+=" ⚠️ This is the last order that gets the deal cost.";
+  return t;
+}
+
+/* ⭐ THE RISK THE BUY LINE ONLY HINTED AT. "Cut back so it clears before it dates
+   out" never said how long the item actually lasts. */
+function lifeLine(r){
+  const w=num(r.shelf_weeks);
+  if(w===null) return `Shelf life unknown, so the dating cap could not be applied — treat a large first buy as the risk.`;
+  let t=`Shelf life about <b>${w.toFixed(0)} week${w>=1.5?"s":""}</b>`;
+  const q=r.proposed_qty, u=num(r.proj_units_wk_calibrated);
+  if(q&&u&&u>0){ const cov=q/u;
+    t+= cov>w ? `; the proposed ${q} is <b>${cov.toFixed(0)} weeks of cover</b>, longer than that.`
+              : `; the proposed ${q} clears in about ${cov.toFixed(0)}.`; }
+  else t+=".";
+  return t;
+}
+
+/* ⭐ WHAT COMPETITORS CHARGE. ⛔ The RAW per-retailer readings are the point:
+   ProductPipeline consumes them when it builds the product and a human may
+   decide a different price there (Jack, 2026-09-04). Our cap is advisory and is
+   labelled as such. ⛔ Every reading shows its AGE - a competitor price is a fact
+   with a date, and this one limits what we charge. */
+function compLine(r){
+  const c=r.competitor_prices;
+  if(!c||!Object.keys(c).length) return "";
+  const order=["lakewinds","wholefoods","target"];
+  const nice={lakewinds:"Lakewinds",wholefoods:"Whole Foods",target:"Target"};
+  const bits=Object.keys(c).sort((a,b)=>order.indexOf(a)-order.indexOf(b)).map(k=>{
+    const v=c[k], exact=v.match_type==="upc_exact";
+    if(v.price==null) return `${nice[k]||k} <span class="mut">no match</span>`;
+    return `${nice[k]||k} <b>${money(v.price)}</b>`+
+      (exact?"":' <span class="mut">(name match — not used for pricing)</span>')+
+      (v.age_days!=null?` <span class="mut">${v.age_days===0?"today":v.age_days+"d old"}</span>`:"");
+  });
+  let t=`Competitors: ${bits.join(" &middot; ")}.`;
+  const cap=r.competitor_cap;
+  if(cap){
+    t+=` Advisory cap <b>${money(cap.price)}</b> — ${esc(cap.basis)}`+
+       (cap.confidence&&cap.confidence!=="high"?` <b>(${esc(cap.confidence)} confidence)</b>`:"")+".";
+    if(r.price&&cap.price&&r.price>cap.price)
+      t+=` <b>Our ${money(r.price)} is above it.</b>`;
+  } else {
+    t+=` <span class="mut">No UPC-exact match, so no competitor cap — priced on cost and category margin.</span>`;
+  }
   return t;
 }
 
@@ -316,6 +434,115 @@ function rankLine(r){
 }
 
 /* ⭐ SPINS gate failures as ENGLISH, not JSON */
+/* WHAT IS THIS THING - one plain sentence, at the very top of the detail
+   (Jack, 2026-09-04). Written by the build from the manufacturer's own copy;
+   a row without copy shows nothing rather than an invented sentence. */
+function whatIs(r){
+  if(!r.what_it_is) return "";
+  /* ⛔ Allergens dropped (Jack, 2026-09-04: "you can cut allergen line"). RIVIR
+     returned a blank allergen string on every row, so it was a label with nothing
+     behind it. Filtered here too, so an older payload cannot resurrect it. */
+  const fx=(r.what_it_is_facts||[]).filter(p=>String(p[0]).toLowerCase()!=="allergens")
+     .map(p=>`<b>${esc(p[0])}:</b> ${esc(p[1])}`).join(" &middot; ");
+  return `<div class="whatis">${esc(r.what_it_is)}${fx?`<span class="fx">${fx}</span>`:""}</div>`;
+}
+
+/* WHAT WE ALREADY SELL HERE (Jack, 2026-09-04): "make a drop down that compiles
+   the key information about the other products that it competes with".
+   NOTE: no backticks inside these comments - they sit in a template literal.
+   The peer block lives ONCE per subcategory on PAYLOAD.meta.peers, so a row
+   looks its own up rather than carrying a copy. */
+/* ⛔⛔ NO ADJECTIVES INSIDE THE TABLE (ruling: Jack, 2026-09-04): "dont put
+   'cheaper' or other adj inline in the table when building - you can put that
+   somewhere as a call out or something, but make the table quick to read and
+   compare." A table is for scanning columns of like against like; a word wedged
+   into a numeric cell breaks the alignment the eye is using. Every judgement now
+   lives in peerNotes() BELOW the table. */
+function num1(v,d){ return v==null||v==="" ? "&mdash;" : Number(v).toFixed(d==null?2:d); }
+function pctCell(v){ return v==null ? "&mdash;" : `${v>0?"+":""}${Number(v).toFixed(0)}%`; }
+
+function peerRows(list,cand,showSub){
+  return list.map(p=>`<tr class="${p.active?"":"off"}">
+      <td>${esc(p.brand||"")}${showSub?`<span class="mut small"> &middot; ${esc(p.subcategory||"")}</span>`:""}</td>
+      <td>${esc(p.name||"")}</td>
+      <td class="n">${p.active?"&#10003;":"&ndash;"}</td>
+      <td class="n">${money(p.price)}</td>
+      <td class="n">${p.cost==null?"&mdash;":money(p.cost)}</td>
+      <td class="n">${p.margin==null?"&mdash;":Math.round(p.margin*100)+"%"}</td>
+      <td class="n">${num1(p.units_wk_recent!=null?p.units_wk_recent:p.units_wk)}</td>
+      <td class="n">${p.families==null?"&mdash;":p.families}</td>
+      <td class="n">${p.top_1_share==null?"&mdash;":Math.round(p.top_1_share)+"%"}</td>
+      <td class="n">${num1(p.spins_expected_units_wk)}</td>
+      <td class="n">${p.vs_market==null?"&mdash;":p.vs_market.toFixed(2)+"\u00d7"}</td>
+      <td class="n">${pctCell(p.trend_pct)}</td>
+      <td class="n">${pctCell(p.spins_growth_pct)}</td></tr>`).join("");
+}
+
+/* ⭐ THE CALL-OUT. Everything the table deliberately does not say, in sentences,
+   and only where it is worth saying. ⛔ 0.8-1.25x reads as parity: our units/wk
+   and SPINS' projection are two different measurements, so the page must never
+   call 0.9 "underperforming". */
+function peerNotes(list,cand){
+  const out=[], live=list.filter(p=>p.active);
+  const cheaper=live.filter(p=>cand&&p.price&&p.price<cand);
+  if(cheaper.length) out.push(`${cheaper.length===1?"One item we already sell is":`${cheaper.length} items we already sell are`} cheaper than ours would be: ${
+    cheaper.slice(0,3).map(p=>`${esc(p.brand)} at ${money(p.price)}`).join(", ")}.`);
+  const under=live.filter(p=>p.vs_market!=null&&p.vs_market<0.8);
+  const over=live.filter(p=>p.vs_market!=null&&p.vs_market>1.25);
+  if(under.length) out.push(`Selling below what the market expects here: ${
+    under.slice(0,3).map(p=>`${esc(p.brand)} (${p.vs_market.toFixed(2)}\u00d7)`).join(", ")}.`);
+  if(over.length) out.push(`Beating the market here: ${
+    over.slice(0,3).map(p=>`${esc(p.brand)} (${p.vs_market.toFixed(2)}\u00d7)`).join(", ")}.`);
+  /* ⭐⭐ THE POINT JACK MADE (2026-09-04): a weekly household count reads as
+     breadth and is not. Oatly Barista shows ~1.5 households a week and is really
+     one family ordering fortnightly - 44% of its demand. An item whose base is
+     one household will not expand just because we put a second one beside it.
+     ⛔ "High" is measured against OUR catalogue, never a made-up threshold. */
+  const bm=(PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.concentration_benchmarks)||null;
+  const hi=bm&&bm.top_1_share?bm.top_1_share.p75:null;
+  const conc=live.filter(p=>p.top_1_share!=null&&hi!=null&&p.top_1_share>=hi);
+  if(conc.length) out.push(`Demand here leans on a few households: ${
+    conc.slice(0,3).map(p=>`${esc(p.brand)} (${Math.round(p.top_1_share)}% of its units go to one family${
+      p.top_1_orders?`, across ${p.top_1_orders} orders`:""})`).join(", ")}. Above the ${
+      hi}% top-buyer share of our upper quartile, so adding beside ${conc.length>1?"them":"it"} is unlikely to reach new households on its own.`);
+  const thin=list.filter(p=>p.trend_note);
+  if(thin.length===list.length&&list.length) out.push(`No item here has enough history for a 13-week trend.`);
+  const dead=list.filter(p=>!p.active);
+  if(dead.length) out.push(`${dead.length} listing${dead.length>1?"s are":" is"} switched off (&ndash; in the live column), so ${dead.length>1?"they have":"it has"} no market comparison.`);
+  return out.length?`<p class="pnote">${out.join(" ")}</p>`:"";
+}
+
+function peerBlock(r){
+  const P=(PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers)||null;
+  if(!P) return `<p class="pnote">No peer table in this payload${
+    PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers_note?" ("+esc(PAYLOAD.meta.peers_note)+")":""}.</p>`;
+  const b=P[r.subcategory];
+  if(!b) return `<p class="pnote">SPINS has not mapped <b>${esc(r.subcategory||"this subcategory")}</b> to our catalogue, so we cannot say what we already sell in it. That is a gap in the mapping, not evidence that we sell nothing.</p>`;
+  const st=b.stats||{}, cand=r.price;
+  const head=`<tr><th>Brand</th><th>What we list</th><th class="n">Live</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th><th class="n">u/wk</th><th class="n">Families</th><th class="n">Top buyer</th><th class="n">Mkt u/wk</th><th class="n">vs mkt</th><th class="n">Ours 13wk</th><th class="n">SPINS 13wk</th></tr>`;
+  let out=`<p class="pnote">We list <b>${st.n_listed}</b> item(s) in <b>${esc(b.subcategory)}</b> &middot; ${st.n_active} active &middot; ${st.n_selling} sold anything in 12 weeks &middot; together <b>${fmt(st.units_wk_total,2)}</b> u/wk${
+    st.price_min!=null?` &middot; priced ${money(st.price_min)}&ndash;${money(st.price_max)}`:""}.</p>`;
+  if(b.same&&b.same.length){
+    out+=`<div class="pwrap"><table class="ptab">${head}${peerRows(b.same,cand,false)}</table></div>`+peerNotes(b.same,cand);
+    if(b.same_truncated) out+=`<p class="pnote">+ ${b.same_truncated} more not shown.</p>`;
+  } else {
+    out+=`<p class="pnote">We list nothing in this subcategory today &mdash; this would be the first.</p>`;
+  }
+  if(b.related&&b.related.length){
+    out+=`<p class="pnote" style="margin-top:9px"><b>Related shelves</b> &mdash; the same product in a different storage class. Kept separate on purpose: it is a different shelf decision, but it competes for the same customer.</p>
+      <div class="pwrap"><table class="ptab">${head}${peerRows(b.related,cand,true)}</table></div>`+peerNotes(b.related,cand);
+  }
+  if(cand) out+=`<p class="pnote">Ours would be <b>${money(cand)}</b>. &#9888; This table is for judgement, not for pricing &mdash; it is size-blind, so never read the median as a price to match.</p>`;
+  /* ⭐ WHAT AN ADD HAS HISTORICALLY DONE HERE. A BAND with its n, never a per-item
+     number - the per-item transfer ratio was measured and rejected as unstable. */
+  const im=b.expected_impact;
+  if(im) out+=`<p class="pnote"><b>What adding tends to do:</b> on ${im.n_events} past adds onto a shelf this busy, the items already there moved <b>${im.median_incumbent_change_pct>0?"+":""}${im.median_incumbent_change_pct}%</b> against the store trend, and ${im.share_negative_pct}% of them fell.${
+    im.shelf_households_change_pct!=null?` Across all ${im.shelf_n_events} adds the incumbents lost households but the shelf as a whole moved ${im.shelf_households_change_pct>0?"+":""}${im.shelf_households_change_pct}% &mdash; the median add <b>redistributes reach rather than growing it</b>, so "it will grow the category" is not on its own a reason to add. Filling a gap nothing else covers is.`:""}</p>`;
+  if(r.brand_skus_we_list) out+=`<p class="pnote">We already list <b>${r.brand_skus_we_list}</b> SKU(s) from <b>${esc(r.brand||"")}</b>.</p>`;
+  out+=`<p class="pnote">Source: ${esc(b.source||"")}</p>`;
+  return out;
+}
+
 function whyNotLine(r){
   const w=r.spins_why_not;
   if(!w||!w.length) return "";
@@ -394,16 +621,28 @@ function rowHtml(r){
      </div>
    </div>
    <div class="body">
+     ${whatIs(r)}
      <p class="lead">${sellLine(r)}</p>
+     ${reachLine(r)?`<p class="lead">${reachLine(r)}</p>`:""}
      <p class="lead">${moneyLine(r)}</p>
      <p class="lead">${buyLine(r)}</p>
+     ${lifeLine(r)?`<p class="lead">${lifeLine(r)}</p>`:""}
+     ${windowLine(r)?`<p class="lead">${windowLine(r)}</p>`:""}
+     ${compLine(r)?`<p class="lead">${compLine(r)}</p>`:""}
      ${imgs?`<div class="imgs">${imgs}</div>`:""}
      ${certs?`<div class="chips">${certs}</div>`:""}
      ${r.demote_reason?`<div class="banner">${esc(r.demote_reason)}</div>`:""}
      ${r.carried_state==="lapsed"?`<div class="banner">We carried this before — ${esc(r.carried_why)}</div>`:""}
+     ${(r.prior_decisions||[]).length?`<div class="banner">${
+       r.prior_decisions.map(h=>`<b>${esc(h.decision||"decided")}</b> on ${esc(h.order_sunday||"")}${
+         h.approved_qty?` (qty ${esc(h.approved_qty)})`:""}${h.note?` — ${esc(h.note)}`:""}`).join("<br>")
+       }</div>`:""}
      ${(r.why||[]).filter(w=>String(w).includes("UNVIABLE")).map(w=>`<div class="banner">${esc(w)}</div>`).join("")}
      <p class="mut small">Ranked by: ${rankLine(r)}</p>
      ${whyNotLine(r)?`<p class="mut small">${whyNotLine(r)}</p>`:""}
+     <details class="raw"><summary class="mut small">what we already sell here</summary>
+       ${peerBlock(r)}
+     </details>
      <details class="raw"><summary class="mut small">every factor and figure</summary>
        <div class="grid">
          <div class="cell"><b>${money(r.price)}</b><span>our price</span></div>
@@ -414,6 +653,10 @@ function rowHtml(r){
          <div class="cell"><b>${pct(r.p_clears_bar)}</b><span>clears its floor</span></div>
          <div class="cell"><b>${money(r.gp_13wk)}</b><span>13-week gross profit</span></div>
          <div class="cell"><b>${fmt(r.our_units_wk_subcat,1)}</b><span>we sell/wk here</span></div>
+         <div class="cell"><b>${fmt(r.households_wk,2)}</b><span>households/wk reached</span></div>
+         <div class="cell"><b>${fmt(r.shelf_weeks,0)}</b><span>shelf life (weeks)</span></div>
+         <div class="cell"><b>${money(r.first_order_cost)}</b><span>this first order costs</span></div>
+         <div class="cell"><b>${r.brand_skus_we_list==null?"&mdash;":r.brand_skus_we_list}</b><span>SKUs we list from this brand</span></div>
        </div>
        <ul class="why">${why}</ul>
        <ul class="why">${qwhy}</ul>
