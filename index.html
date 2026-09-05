@@ -145,6 +145,66 @@ textarea{width:100%;margin-top:7px;min-height:52px}
 .mut{color:var(--mut)}
 .center{text-align:center;padding:50px 16px;color:var(--mut)}
 code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
+
+.viz{color-scheme:light;
+  --surface-1:#fcfcfb; --surface-2:#f3f3f0; --line:#dedcd5;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#7d7b74;
+  --ours:#2a78d6; --cand:#eb6834; --mkt:#b9b7ae; --sel:#4a3aa7;
+  --good:#008300; --bad:#e34948;}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz{
+  color-scheme:dark; --surface-1:#1a1a19; --surface-2:#232322; --line:#3a3a37;
+  --ink:#fff; --ink-2:#c3c2b7; --ink-3:#8e8d84;
+  --ours:#3987e5; --cand:#d95926; --mkt:#5f5e58; --sel:#9085e9;}}
+:root[data-theme="dark"] .viz{color-scheme:dark;
+  --surface-1:#1a1a19; --surface-2:#232322; --line:#3a3a37;
+  --ink:#fff; --ink-2:#c3c2b7; --ink-3:#8e8d84;
+  --ours:#3987e5; --cand:#d95926; --mkt:#5f5e58; --sel:#9085e9;}
+*{box-sizing:border-box}
+.viz{background:var(--surface-1);min-height:100vh;padding:18px 20px 40px}
+h1{font-size:19px;margin:0 0 3px;letter-spacing:-.01em}
+.sub{color:var(--ink-2);font-size:13px;margin:0 0 14px;max-width:78ch}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{background:var(--surface-1);color:var(--ink-2);border:0;padding:6px 11px;
+  font:inherit;font-size:12.5px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--surface-1);font-weight:600}
+select,input[type=search]{background:var(--surface-1);color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:12.5px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
+  border-radius:20px;padding:4px 11px;font-size:12.5px;cursor:pointer;user-select:none;
+  background:var(--surface-1);color:var(--ink-2)}
+.chip[aria-pressed=true]{border-color:currentColor;font-weight:600}
+.chip i{width:9px;height:9px;border-radius:50%;background:currentColor;display:block}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start}
+@media(max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}}
+.plot{position:relative;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-1);overflow:hidden}
+canvas{display:block;width:100%;cursor:crosshair}
+.axl{color:var(--ink-3);font-size:11.5px;text-align:center;padding:5px 0 8px}
+.quad{position:absolute;font-size:11px;color:var(--ink-3);pointer-events:none;
+  letter-spacing:.02em;text-transform:uppercase}
+.tip{position:absolute;pointer-events:none;background:var(--surface-1);
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;
+  box-shadow:0 6px 22px rgba(0,0,0,.14);max-width:260px;z-index:5;display:none}
+.panel{border:1px solid var(--line);border-radius:10px;padding:13px;
+  background:var(--surface-1);position:sticky;top:12px;max-height:88vh;overflow:auto}
+.panel h2{font-size:13px;margin:0 0 9px;letter-spacing:.02em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600}
+.mut{color:var(--ink-2)} .small{font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td{padding:2.5px 0;vertical-align:top} td:first-child{color:var(--ink-2);padding-right:9px;white-space:nowrap}
+.selrow{display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.selrow i{width:10px;height:10px;border-radius:50%;flex:none}
+.x{margin-left:auto;cursor:pointer;color:var(--ink-3);border:0;background:none;font-size:15px;line-height:1}
+.empty{color:var(--ink-3);font-size:12.5px;padding:14px 0;text-align:center}
+.note{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;font-size:12px;color:var(--ink-2);margin-top:12px}
+.k{font-variant-numeric:tabular-nums}
+details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-2);font-size:12.5px}
+.scroll{overflow-x:auto;margin-top:8px} .scroll table td,.scroll table th{padding:4px 9px 4px 0;white-space:nowrap}
+.scroll th{text-align:left;color:var(--ink-3);font-weight:600;border-bottom:1px solid var(--line)}
+
 </style>
 
 <header>
@@ -153,6 +213,7 @@ code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
     <button class="tab" role="tab" data-tab="reco" aria-selected="true">Recommended</button>
     <button class="tab" role="tab" data-tab="all" aria-selected="false">Everything on promo</button>
     <button class="tab" role="tab" data-tab="done" aria-selected="false">Decided</button>
+    <button class="tab" role="tab" data-tab="map" aria-selected="false">Market map</button>
   </div>
 </header>
 <main id="main"><div class="center">Loading…</div></main>
@@ -980,7 +1041,12 @@ function visible(){
   return ROWS.filter(r=>!DECIDED[r.upc]);
 }
 function render(){
-  const m=document.getElementById("main"), v=visible();
+  const m=document.getElementById("main");
+  // ⭐ the map is its own view — it does not share the row list, the decision
+  // footer or the filters, so it short-circuits before any of that runs.
+  if(TAB==="map"){ m.classList.add("mapview"); renderMarketMap(m); return; }
+  m.classList.remove("mapview");
+  const v=visible();
   const st=PAYLOAD.meta.spins_state||{};
   let head="";
   if(st.note) head+=`<div class="banner">${esc(st.note)}</div>`;
@@ -1053,6 +1119,584 @@ document.addEventListener("click",e=>{
     tally();
   }
 });
+/* ══ MARKET POSITION MAP ══ ported from output/market_map/. ⛔ Data is NOT
+   embedded: it is fetched from SharePoint on first open, so the page stays
+   code-only and the map is not bound by any embedded-size limit. */
+/* ══ MARKET POSITION MAP ══ ported from output/market_map/_script.js.
+   ⛔ Data is NOT embedded — it is fetched from SharePoint on first open, so
+   this page stays code-only and the map has no embedded-size ceiling.
+   ⛔ Regenerate with scripts/port_market_map.py; never hand-edit here. */
+function initMarketMap(root, D){
+  const $=id=>root.querySelector('#mm_'+id);
+  root.classList.add('viz');
+  root.innerHTML="\n<h1>Market position map</h1>\n<p class=\"sub\">Every dot is one product in a subcategory <b>we already compete in</b>.\n<span style=\"color:var(--ours)\">\u25cf</span> what we sell today \u00b7\n<span style=\"color:var(--cand)\">\u25cf</span> this week's orderable candidates \u00b7\n<span style=\"color:var(--mkt)\">\u25cf</span> the rest of the market.\nClick any dot for its two-year trend; click several to compare them.</p>\n\n<div class=\"bar\">\n  <div class=\"seg\" id=\"mm_views\"></div>\n  <span class=\"chip\" data-pop=\"ours\"      aria-pressed=\"true\" style=\"color:var(--ours)\"><i></i>Ours</span>\n  <span class=\"chip\" data-pop=\"candidate\" aria-pressed=\"true\" style=\"color:var(--cand)\"><i></i>Candidates</span>\n  <span class=\"chip\" data-pop=\"market\"    aria-pressed=\"true\" style=\"color:var(--mkt)\"><i></i>Market</span>\n  <select id=\"mm_dept\"><option value=\"\">All departments</option></select>\n  <select id=\"mm_sub\"><option value=\"\">All subcategories</option></select>\n  <input type=\"search\" id=\"mm_q\" placeholder=\"Find a product or brand\u2026\" style=\"min-width:190px\">\n  <button class=\"chip\" id=\"mm_clear\" style=\"color:var(--ink-2)\">Clear selection</button>\n</div>\n\n<div class=\"wrap\">\n  <div>\n    <div class=\"plot\" id=\"mm_plot\">\n      <canvas id=\"mm_cv\"></canvas>\n      <div class=\"tip\" id=\"mm_tip\"></div>\n    </div>\n    <div class=\"axl\" id=\"mm_axl\"></div>\n    <div class=\"note\" id=\"mm_note\"></div>\n    <details class=\"tbl\"><summary>Table view \u2014 the selected items as numbers</summary>\n      <div class=\"scroll\" id=\"mm_tblwrap\"><p class=\"empty\">Nothing selected yet.</p></div>\n    </details>\n  </div>\n\n  <div class=\"panel\">\n    <h2>Selected</h2>\n    <div id=\"mm_sel\"><p class=\"empty\">Click a dot on the map.<br>Click more to compare.</p></div>\n    <div id=\"mm_trend\"></div>\n    <div id=\"mm_detail\"></div>\n  </div>\n</div>\n";
+/* ── the three maps. ⭐ Each answers a DIFFERENT question; they are not restylings
+   of one chart. x/y are accessors, so adding a fourth view is one object. ── */
+const VIEWS = [
+ {id:'opp', name:'Opportunity',
+  x:{k:'acv', label:'% of stores carrying it (ACV)', log:true, unit:'%'},
+  y:{k:'acvG', label:'Distribution growth, year on year', unit:'%', zero:true},
+  blurb:'Where is the whitespace? Low distribution + rising = arriving. High + falling = being delisted. '+
+        'The vertical line is the point below which a shopper is unlikely to have seen the item elsewhere.',
+  quads:['Arriving — few stores, spreading fast','Winning — widely carried and still growing',
+         'Niche or stalled','Retreating — losing shelf space'], vline:20},
+ {id:'price', name:'Price vs velocity',
+  x:{k:'mktPrice', label:'Market shelf price', unit:'$'},
+  y:{k:'sppG', label:'Units per store per week, growth', unit:'%', zero:true},
+  blurb:'How the shelf is priced, and whether the item is actually turning. '+
+        'Our dots sitting right of the cloud at flat growth is the overpricing signal.',
+  quads:['Cheap and accelerating','Premium and accelerating','Cheap but flat','Premium and flat']},
+ {id:'life', name:'Lifecycle',
+  x:{k:'weeksSeen', label:'Weeks since the market first saw it', log:true, unit:'w'},
+  y:{k:'acv', label:'% of stores carrying it (ACV)', unit:'%'},
+  blurb:'Maturity. A young item already widely carried is a fast mover; an old item at low '+
+        'distribution never found its shelf. ⛔ Left of ~104 weeks the first-seen date may be censored.',
+  quads:['New, still narrow','New and already broad','Old and still narrow','Established'], vline:104}];
+
+const VOC = D.vocab, PER = D.meta.periods, SHELF = D.shelf||{};
+const ITEMS = D.items;
+const POPC = {ours:'--ours', candidate:'--cand', market:'--mkt'};
+const SELC = ['#4a3aa7','#008300','#e34948','#eda100','#e87ba4','#1baf7a'];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n) ||
+                 getComputedStyle(root).getPropertyValue(n);
+const v = (r,f) => { const i=r[f]; return i==null?null:(VOC[f]?VOC[f][i]:i); };
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => n==null?'—':'$'+(+n).toLocaleString(undefined,{maximumFractionDigits:n<100?2:0});
+const pct = n => n==null?'—':(n>0?'+':'')+(+n).toFixed(n>-10&&n<10?1:0)+'%';
+
+let view = VIEWS[0], pops = {ours:1,candidate:1,market:1}, fDept='', fSub='', fQ='';
+let sel = [], hot = null, pts = [];
+
+/* ── filters ── */
+function visible(){
+  const q = fQ.toLowerCase();
+  return ITEMS.filter(r=>{
+    if(!pops[r.pop]) return false;
+    if(fDept && v(r,'dept')!==fDept) return false;
+    if(fSub && v(r,'sub')!==fSub) return false;
+    if(q && !((r.desc||'').toLowerCase().includes(q) || (v(r,'brand')||'').toLowerCase().includes(q))) return false;
+    return r[view.x.k]!=null && r[view.y.k]!=null;
+  });
+}
+
+/* ── scales ── */
+function scales(rows,W,H){
+  const P={l:54,r:16,t:16,b:26};
+  const xs=rows.map(r=>+r[view.x.k]), ys=rows.map(r=>+r[view.y.k]);
+  const lo=(a,p)=>{const s=[...a].sort((m,n)=>m-n);return s[Math.floor(s.length*p)]??0;};
+  let x0=view.x.log?Math.max(0.05,lo(xs,.002)):lo(xs,.005), x1=lo(xs,.99);
+  let y0,y1;
+  if(view.y.zero){
+    // ⭐ 88th percentile of ABSOLUTE value, not the extremes. Symmetric so zero
+    // stays centred and "growing" vs "shrinking" reads by side of the line.
+    const m=Math.max(5,lo(ys.map(Math.abs),.88));
+    y0=-m; y1=m;
+  } else { y0=lo(ys,.02); y1=lo(ys,.98); }
+  if(x1<=x0)x1=x0+1; if(y1<=y0)y1=y0+1;
+  const lg=n=>Math.log10(Math.max(n,0.05));
+  const X=n=>{const a=view.x.log?lg(n):n,A=view.x.log?lg(x0):x0,B=view.x.log?lg(x1):x1;
+              return P.l+(a-A)/(B-A)*(W-P.l-P.r);};
+  const Y=n=>{const c=Math.max(y0,Math.min(y1,n));
+              return H-P.b-((c-y0)/(y1-y0))*(H-P.t-P.b);};
+  const clipped=ys.filter(n=>n<y0||n>y1).length;
+  return {X,Y,x0,x1,y0,y1,P,clipped};
+}
+
+/* ── draw ── */
+const cv=$('cv'), ctx=cv.getContext('2d');
+function draw(){
+  const rows=visible(), host=$('plot');
+  const W=host.clientWidth, H=Math.max(360,Math.min(560,Math.round(W*0.56)));
+  const dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  if(!rows.length){pts=[];$('note').textContent='No items match these filters.';return;}
+  const S=scales(rows,W,H); const {X,Y,P}=S;
+  const line=css('--line').trim(), ink3=css('--ink-3').trim();
+
+  /* grid + zero line */
+  ctx.strokeStyle=line; ctx.lineWidth=1; ctx.font='11px -apple-system,sans-serif';
+  ctx.fillStyle=ink3; ctx.textAlign='right';
+  for(let i=0;i<=4;i++){
+    const yv=S.y0+(S.y1-S.y0)*i/4, y=Math.round(Y(yv))+.5;
+    ctx.globalAlpha=.55; ctx.beginPath(); ctx.moveTo(P.l,y); ctx.lineTo(W-P.r,y); ctx.stroke();
+    ctx.globalAlpha=1; ctx.fillText(Math.round(yv)+(view.y.unit==='%'?'%':''),P.l-7,y+3.5);
+  }
+  if(view.y.zero){const y=Math.round(Y(0))+.5; ctx.strokeStyle=ink3; ctx.globalAlpha=.55;
+    ctx.beginPath();ctx.moveTo(P.l,y);ctx.lineTo(W-P.r,y);ctx.stroke();ctx.globalAlpha=1;}
+  if(view.vline!=null && view.vline>S.x0){const x=Math.round(X(view.vline))+.5;
+    ctx.strokeStyle=ink3;ctx.globalAlpha=.5;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(x,P.t);ctx.lineTo(x,H-P.b);ctx.stroke();
+    ctx.setLineDash([]);ctx.globalAlpha=1;}
+  /* x ticks */
+  ctx.textAlign='center';
+  const xt=view.x.log?[1,5,10,25,50,100].filter(n=>n>=S.x0&&n<=S.x1)
+    :Array.from({length:5},(_,i)=>S.x0+(S.x1-S.x0)*i/4);
+  let lastX=-1e9;
+  xt.forEach(n=>{const x=X(n); if(x-lastX<38) return; lastX=x;      // ⛔ no collisions
+    ctx.fillText((view.x.unit==='$'?'$':'')+(n<10?(+n).toFixed(1):Math.round(n))+
+      (view.x.unit==='%'?'%':view.x.unit==='w'?'w':''),x,H-P.b+15);});
+
+  /* marks — market first so ours/candidates sit on top */
+  pts=[];
+  const order={market:0,ours:1,candidate:2};
+  const sorted=[...rows].sort((a,b)=>order[a.pop]-order[b.pop]);
+  const selIdx=new Map(sel.map((s,i)=>[s.upc,i]));
+  for(const r of sorted){
+    const x=X(+r[view.x.k]), y=Y(+r[view.y.k]);
+    if(x<P.l-6||x>W||y<0||y>H) continue;
+    const isSel=selIdx.has(r.upc);
+    const mag=r.dollars? Math.min(7,2.2+Math.log10(Math.max(r.dollars,1))*0.62):2.6;
+    const rad=isSel?Math.max(6,mag+2):(r.pop==='market'?Math.max(1.6,mag*0.62):mag);
+    const col=isSel?SELC[selIdx.get(r.upc)%SELC.length]:css(POPC[r.pop]).trim();
+    ctx.globalAlpha=isSel?1:(r.pop==='market'?0.42:0.85);
+    // ⭐ a SELECTED mark takes its population's shape, so the map and the trend
+    // panels below it speak the same visual language. Unselected marks stay
+    // circles — at 2px a square and a circle are the same smudge.
+    if(isSel && r.pop==='market'){
+      const w=rad*1.8; ctx.fillStyle=col;
+      ctx.fillRect(x-w/2,y-w/2,w,w);
+      ctx.lineWidth=2;ctx.strokeStyle=css('--surface-1').trim();ctx.strokeRect(x-w/2,y-w/2,w,w);
+    } else if(isSel && r.pop==='candidate'){
+      ctx.beginPath(); ctx.arc(x,y,rad,0,6.2832);
+      ctx.fillStyle=css('--surface-1').trim(); ctx.fill();
+      ctx.lineWidth=2.5; ctx.strokeStyle=col; ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(x,y,rad,0,6.2832); ctx.fillStyle=col; ctx.fill();
+      if(isSel){ctx.lineWidth=2;ctx.strokeStyle=css('--surface-1').trim();ctx.stroke();}
+    }
+    ctx.globalAlpha=1;
+    pts.push({x,y,r:Math.max(rad,4),d:r});
+  }
+  // ⭐ NAME THE QUADRANTS. Without them a scatter is a cloud — the label is what
+  // turns a position into a decision ("arriving" vs "being delisted").
+  if(view.quads){
+    ctx.font='600 10px -apple-system,sans-serif'; ctx.fillStyle=ink3;
+    const half=(W-P.l-P.r)/2-14;
+    // ⭐ each caption must fit its own half, or the left and right run together
+    // into a smear (seen at 642px). Shorten, then drop — never overlap.
+    const fits=t=>ctx.measureText(t.toUpperCase()).width<=half;
+    const short=t=>t.split(/\s+[—-]\s+/)[0];
+    let labs=view.quads;
+    if(!labs.every(fits)) labs=view.quads.map(short);
+    if(labs.every(fits)){
+      ctx.globalAlpha=.85;
+      const put=(t,x,y,al)=>{ctx.textAlign=al;ctx.fillText(t.toUpperCase(),x,y);};
+      put(labs[0],P.l+8,P.t+11,'left');   put(labs[1],W-P.r-8,P.t+11,'right');
+      put(labs[2],P.l+8,H-P.b-8,'left');  put(labs[3],W-P.r-8,H-P.b-8,'right');
+      ctx.globalAlpha=1;
+    }
+    ctx.textAlign='center';
+  }
+  $('axl').textContent=view.x.label+'  →';
+  $('note').innerHTML=
+    '<b>'+rows.length.toLocaleString()+'</b> items shown · '+esc(view.blurb)+
+    (S.clipped?' <b>'+S.clipped+'</b> extreme value(s) sit pinned to the top or bottom edge '+
+      'so the rest stays readable.':'')+
+    ' <span class="mut">Market period ending '+esc(D.meta.period)+
+    '. The market cloud is the top '+D.meta.market_top_n+
+    ' sellers per shelf we compete on, not all of grocery.</span>';
+}
+
+/* ── hover ── */
+function nearest(mx,my){
+  let best=null,bd=1e9;
+  for(const p of pts){const d=(p.x-mx)**2+(p.y-my)**2;
+    if(d<bd && d<Math.max(90,p.r*p.r*4)){bd=d;best=p;}}
+  return best;
+}
+const tip=$('tip');
+cv.addEventListener('mousemove',e=>{
+  const b=cv.getBoundingClientRect(), mx=e.clientX-b.left, my=e.clientY-b.top;
+  const p=nearest(mx,my); hot=p?p.d:null;
+  if(!p){tip.style.display='none';cv.style.cursor='crosshair';return;}
+  const r=p.d; cv.style.cursor='pointer';
+  tip.innerHTML='<b>'+esc(r.desc||'(no description)')+'</b><br><span class="mut small">'+
+    esc(v(r,'brand')||'')+' · '+esc(v(r,'sub')||'')+'</span><br><span class="small">'+
+    (r.pop==='ours'?'<b style="color:var(--ours)">We sell this</b>':
+     r.pop==='candidate'?'<b style="color:var(--cand)">Candidate this week</b>':'Market')+
+    ' · '+view.x.label.split(',')[0]+': <b>'+fmt(r[view.x.k],view.x.unit)+'</b>'+
+    ' · '+view.y.label.split(',')[0]+': <b>'+fmt(r[view.y.k],view.y.unit)+'</b></span>'+
+    (priceLine(r)?'<br><span class="small">'+priceLine(r)+'</span>':'');
+  tip.style.display='block';
+  const tw=tip.offsetWidth, th=tip.offsetHeight;
+  tip.style.left=Math.min(Math.max(4,mx-tw/2),cv.clientWidth-tw-4)+'px';
+  tip.style.top=Math.max(4,my-th-12)+'px';
+});
+cv.addEventListener('mouseleave',()=>{tip.style.display='none';hot=null;});
+/* ⭐ RETAIL AND MARGIN, the two numbers a buying decision actually turns on.
+   ⛔ A candidate's price is our ESTIMATE (cost ÷ the category's learned margin),
+   NOT a price anyone has agreed — it is labelled "est." so nobody reads it as set.
+   ⛔ Margin is shown ONLY where a real cost exists; 29% of our own SKUs have none
+   and a blank is safer than a margin computed against a guessed cost. */
+function priceBits(r){
+  const isC=r.pop==='candidate';
+  const price=isC?r.price:(r.ourSale!=null?r.ourSale:r.ourPrice);
+  const cost =isC?r.cost:r.ourCost;
+  const marg =isC?r.margin:r.ourMargin;
+  const m = marg==null ? (price&&cost?((price-cost)/price):null) : marg;
+  return {price, cost, m, isC,
+          label:isC?'est. retail':(r.ourSale!=null?'our price (on sale)':'our price')};
+}
+function priceLine(r){
+  const b=priceBits(r);
+  if(b.price==null && b.cost==null) return '';
+  const mg=b.m==null?null:Math.round(b.m*100);
+  return '<span class="k">'+(b.price==null?'—':money(b.price))+'</span>'+
+    ' <span class="mut">'+b.label+'</span>'+
+    (mg==null?' <span class="mut">· margin unknown</span>'
+             :' · <span class="k" style="color:'+(mg<25?'var(--bad)':mg>=35?'var(--good)':'inherit')+
+              '">'+mg+'% margin</span>')+
+    (b.cost==null?'':' <span class="mut">at '+money(b.cost)+' cost</span>');
+}
+function fmt(n,u){return n==null?'—':u==='%'?pct(n):u==='$'?money(n):u==='w'?Math.round(n)+'w':(+n).toFixed(1);}
+
+/* ── selection ── */
+cv.addEventListener('click',e=>{
+  const b=cv.getBoundingClientRect();
+  const p=nearest(e.clientX-b.left,e.clientY-b.top); if(!p) return;
+  const i=sel.findIndex(s=>s.upc===p.d.upc);
+  if(i>=0) sel.splice(i,1);
+  else { if(sel.length>=6) sel.shift(); sel.push(p.d); }
+  draw(); renderSel();
+});
+$('clear').onclick=()=>{sel=[];draw();renderSel();};
+
+/* ── the trend chart: real series, one line per selected item ── */
+let trendMode=null;          // null = choose automatically
+
+/* ⭐⭐ SMALL MULTIPLES, NOT ONE CHART WITH SEVERAL SCALES.
+   ⛔ Market DOLLARS conflate two different things: how many stores carry it, and
+   how much each store sells. An item's dollars can climb while every store sells
+   LESS of it — distribution outrunning demand, which is what a delist looks like
+   on the way down. So each measure gets its own panel and its own y-scale, and
+   ⛔ never a second axis on one chart. Colour ties a line to its item across all
+   panels, so the eye reads one product down the stack. */
+/* ⭐ SHAPE CARRIES THE POPULATION, colour carries the item. ⛔ Colour alone fails
+   for a colour-blind reader and in print; the pair is redundant on purpose.
+     ours      ● filled circle  — a real, measured thing
+     candidate ○ open circle    — hollow because it is not ours yet
+     market    ■ square         — a different kind of object entirely       */
+function marker(pop,x,y,c,big){
+  const r=big?4.6:3.2;
+  if(pop==='candidate')
+    return `<circle cx="${x}" cy="${y}" r="${r+1}" fill="var(--surface-1)" `+
+           `stroke="${c}" stroke-width="2"/>`;
+  if(pop==='market'){const w=r*1.8;
+    return `<rect x="${(x-w/2).toFixed(1)}" y="${(y-w/2).toFixed(1)}" `+
+           `width="${w.toFixed(1)}" height="${w.toFixed(1)}" fill="${c}"/>`;}
+  return `<circle cx="${x}" cy="${y}" r="${r}" fill="${c}"/>`;
+}
+function shapeKey(){
+  const seen=[...new Set(sel.map(s=>s.pop))];
+  const nm={ours:'we sell it',candidate:'candidate',market:'market'};
+  return '<div class="small mut" style="display:flex;gap:11px;margin:2px 0 0">'+
+    seen.map(p=>'<span>'+(p==='ours'?'●':p==='candidate'?'○':'■')+' '+nm[p]+'</span>').join('')+
+    '</div>';
+}
+function mini(title, get, labels, opt){
+  opt=opt||{};
+  const W=300,H=opt.h||86,P={l:34,r:8,t:8,b:15};
+  const ser=sel.map(get);
+  const all=ser.flat().filter(x=>x!=null);
+  if(all.length<2) return '';
+  let lo=Math.min(...all), hi=Math.max(...all);
+  if(opt.zero) lo=Math.min(0,lo);
+  if(hi<=lo) hi=lo+1;
+  const n=Math.max(...ser.map(a=>a.length));
+  const X=i=>n<2?P.l:P.l+i/(n-1)*(W-P.l-P.r);
+  const Y=d=>H-P.b-((d-lo)/(hi-lo))*(H-P.t-P.b);
+  const f=opt.fmt||(v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?Math.round(v/1e3)+'k':
+                      (v>=10?Math.round(v):(+v).toFixed(1)));
+  let g='';
+  [hi,lo].forEach(vv=>{const y=Y(vv).toFixed(1);
+    g+=`<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`+
+       `<text x="${P.l-5}" y="${+y+3.5}" text-anchor="end" fill="var(--ink-3)" font-size="9">`+f(vv)+'</text>';});
+  ser.forEach((a,k)=>{
+    const pp=a.map((d,i)=>d==null?null:[X(i),Y(d)]).filter(Boolean);
+    if(!pp.length) return;
+    const c=SELC[k%SELC.length];
+    const dash=opt.projected&&opt.projected(sel[k]);
+    if(pp.length>1)
+      g+=`<path d="M${pp.map(q=>q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' L')}" fill="none" `+
+         `stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"`+
+         (dash?' stroke-dasharray="5 4"':'')+`/>`;
+    const pop=sel[k]?sel[k].pop:'ours';
+    if(n<=5) pp.forEach(q=>{g+=marker(pop,q[0].toFixed(1),q[1].toFixed(1),c);});
+    else { const q=pp[pp.length-1]; g+=marker(pop,q[0].toFixed(1),q[1].toFixed(1),c,true); }
+  });
+  const L=(labels||[]).filter(x=>x!=null&&x!=='');
+  L.forEach((t,i)=>{
+    const lx=L.length<2?P.l:P.l+i/(L.length-1)*(W-P.l-P.r);
+    g+=`<text x="${lx.toFixed(1)}" y="${H-3}" fill="var(--ink-3)" font-size="9" `+
+       `text-anchor="${i===0?'start':i===L.length-1?'end':'middle'}">${t}</text>`;});
+  return '<div style="margin-top:12px"><div class="small mut" style="font-weight:600;'+
+    'letter-spacing:.02em;margin-bottom:1px">'+title+'</div>'+
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${title}">${g}</svg>`+
+    (opt.note?'<div class="small mut" style="margin-top:-2px">'+opt.note+'</div>':'')+'</div>';
+}
+
+function trendSVG(){
+  if(!sel.length) return '';
+  const LAG=D.meta.lag_points||['yr ago','12w','4w','now'];
+  /* panel 1 — market dollars, the 26-period series, with the index toggle */
+  const raw=sel.map(s=>(s.series||[]));
+  const peaks=raw.map(a=>Math.max(0,...a.filter(x=>x!=null)));
+  const pos=peaks.filter(x=>x>0);
+  const lo=pos.length?Math.min(...pos):0, hi=peaks.length?Math.max(...peaks):0;
+  const spread=(lo>0&&hi/lo>8);
+  const idx=trendMode==null?spread:trendMode==='index';
+  const ser=idx?raw.map(a=>{const b=a.find(x=>x!=null&&x>0);
+                 return a.map(x=>x==null||!b?null:x/b*100);}):raw;
+  let out='<h2 style="margin-top:15px">How these are doing</h2>'+
+    '<div class="seg" style="margin-bottom:2px"><button data-t="abs" aria-pressed="'+(!idx)+
+    '">Dollars</button><button data-t="index" aria-pressed="'+idx+'">Indexed</button></div>'+
+    mini('Market sales, 2 years', (s,i)=>ser[sel.indexOf(s)]||[],
+         [PER[0],PER[PER.length-1]], {h:104, zero:!idx,
+      note: idx?'Each line starts at 100 — shapes compare, ⛔ not sizes'+
+                (trendMode==null&&lo>0?' · auto: '+Math.round(hi/lo)+'-fold apart':'')
+               :'Total dollars, North Central, per 4-week period'});
+  /* ⭐ the two panels that separate "more shelves" from "more demand" */
+  out+=shapeKey();
+  out+=mini('Distribution — % of stores carrying it',
+            s=>s.acvSeries||[], LAG, {zero:true, fmt:v=>(+v).toFixed(0)+'%'});
+  out+=mini('Velocity — units per store, per week',
+            s=>s.sppSeries||[], LAG, {zero:true, fmt:v=>(+v).toFixed(1),
+    note:'⭐ Dollars can rise while THIS falls — that is distribution outrunning demand'});
+  out+=mini('Coast distribution — the region that moves first',
+            s=>s.coastSeries||[], LAG, {zero:true, fmt:v=>(+v).toFixed(0)+'%'});
+  /* ⭐⭐ WEEKLY UNITS FOR EVERY SELECTION, not only the ones we already sell.
+     ⛔ But they are DIFFERENT KINDS OF NUMBER and must never look alike:
+        ours      — MEASURED, our real weekly order history, solid line
+        candidate — PROJECTED, one rate we have not observed, DASHED and flat,
+                    drawn across the same weeks with its p10-p90 band
+        market    — nothing honest to draw; we do not sell it and there is no
+                    projection for it, so it is named as absent, never as zero. */
+  const wk=D.meta.our_weeks||[];
+  const anyUnits=sel.some(s=>s.ourSeries||s.proj!=null);
+  if(anyUnits && wk.length){
+    const N=wk.length;
+    const unitsFor=s=>{
+      if(s.ourSeries) return s.ourSeries;
+      if(s.proj!=null) return new Array(N).fill(s.proj);   // a flat projected rate
+      return [];
+    };
+    // the projection's uncertainty, drawn behind the lines
+    let band='';
+    sel.forEach((s,k)=>{ if(s.ourSeries||s.projLo==null||s.projHi==null) return;
+      band+='<!--band-->'; });
+    out+=mini('Weekly units — ours measured, candidates projected', unitsFor,
+              [wk[0]||'', wk[N-1]||''],
+              {h:104, zero:true, projected:s=>!s.ourSeries&&s.proj!=null,
+               fmt:v=>(+v).toFixed(v>=10?0:1)});
+    const proj=sel.filter(s=>!s.ourSeries&&s.proj!=null);
+    const none=sel.filter(s=>!s.ourSeries&&s.proj==null);
+    out+='<div class="small mut" style="margin-top:-2px">'+
+      'Solid = our real order history. <b>Dashed = a projection</b>, flat because it is '+
+      'one rate, not a history'+
+      (proj.length?' ('+proj.map(s=>esc((s.desc||'').slice(0,16))+': '+
+        (+s.proj).toFixed(1)+'/wk'+(s.projLo!=null&&s.projHi!=null
+          ?' , likely '+(+s.projLo).toFixed(1)+'-'+(+s.projHi).toFixed(1):'')).join('; ')+')':'')+
+      (none.length?' \u26d4 '+none.length+' market item(s) have no line — we do not sell '+
+        'them and there is no projection, which is not the same as zero.':'')+
+      '</div>'+shapeKey();
+    if(sel.some(s=>s.ourHH))
+      out+=mini('OUR weekly households buying it', s=>s.ourHH||[],
+                [wk[0]||'', wk[N-1]||''], {h:80, zero:true,
+        note:'Breadth of demand \u2014 one household buying 20 is not 20 households. '+
+             '\u26a0\ufe0f Only for items we already sell; there is no household '+
+             'projection for a candidate.'});
+  }
+  return out;
+}
+
+/* ⭐ TRI-STATE, NEVER A TICKBOX. SPINS' "NOT CERTIFIED" means *not coded as
+   positive*, and "SUBCATEGORY NOT CODED"/"UNKNOWN" mean nobody looked. Showing
+   either as "no" invents a fact about the product. */
+function attrVal(r,key){
+  const ks=VOC.attrKeys||[], i=ks.indexOf(key);
+  if(i<0||!r.attrs) return null;
+  const v=r.attrs[i]; return v==null?null:(VOC.attrVals||[])[v];
+}
+const NOT_CODED=/NOT CODED|UNKNOWN|^NULSUB$/i;
+function flagChip(r,key,label,goodIsN){
+  const v=attrVal(r,key);
+  if(v==null||NOT_CODED.test(v))
+    return '<span class="chip small" style="color:var(--ink-3);cursor:default">'+
+           label+': not coded</span>';
+  const yes=/^Y$/i.test(v)||/CERTIFIED (?!NOT)/i.test(v)&&!/^NOT /i.test(v);
+  const good=goodIsN?!yes:yes;
+  return '<span class="chip small" style="cursor:default;color:'+
+    (good?'var(--good)':'var(--bad)')+'">'+label+': '+(yes?'yes':'no')+'</span>';
+}
+function seasonBadge(r){
+  const f=r.seasonFlag==null?null:(VOC.seasonFlag||[])[r.seasonFlag];
+  if(!f) return '';
+  const m={'SEASON-PEAK-AHEAD':['⬆ season peak ahead','var(--good)'],
+           'SEASON-TROUGH-AHEAD':['⬇ season trough ahead','var(--bad)'],
+           'DECLINING':['⚠ declining','var(--bad)'],
+           'NEW-ITEM':['new to the market','var(--ink-2)'],
+           'STABLE':['stable','var(--ink-3)']}[f]||[f,'var(--ink-3)'];
+  return '<span class="chip small" style="cursor:default;color:'+m[1]+'">'+m[0]+
+    (r.seasonIdx!=null&&Math.abs(r.seasonIdx)>1.5?' ('+(+r.seasonIdx).toFixed(1)+'×)':'')+
+    '</span>';
+}
+function perUnit(r){
+  const b=priceBits(r), u=r.uom==null?null:(VOC.uom||[])[r.uom];
+  if(b.price==null||!r.size||!u) return null;
+  return money(b.price/r.size)+' / '+u.toLowerCase()+
+         '  <span class="mut">('+r.size+u.toLowerCase()+' pack)</span>';
+}
+function row(l,val){return val==null||val===''?'':'<tr><td>'+l+'</td><td class="k">'+val+'</td></tr>';}
+function detail(r){
+  const B=VOC.mB||[], b=(r.mB||[]).map(i=>i==null?null:B[i]);
+  const shelfInfo=SHELF[(VOC.sub||[])[r.sub]]||{};
+  const chips='<div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 8px">'+
+    seasonBadge(r)+
+    (attrVal(r,'brand_position')?'<span class="chip small" style="cursor:default;color:'+
+      (/CONVENTIONAL/i.test(attrVal(r,'brand_position'))?'var(--bad)':'var(--good)')+'">'+
+      esc(attrVal(r,'brand_position').toLowerCase())+'</span>':'')+
+    flagChip(r,'labeled_organic','organic')+
+    flagChip(r,'certified_non_gmo_project_verified','non-GMO')+
+    flagChip(r,'ingredient_seed_oils','seed oils',true)+
+    flagChip(r,'ingredient_artificial_colors','artif. colors',true)+
+    flagChip(r,'ingredient_ultra_processed','ultra-processed',true)+
+    '</div>';
+  // ⛔ warnings about OUR OWN item come first — they are the reason to act
+  const warn=(r.cutList?'<div class="note" style="margin:0 0 8px"><b>SPINS says: '+
+      esc(r.cutList.rec||'')+'</b>'+(r.cutList.units12!=null?
+      ' — '+r.cutList.units12+' units in 12 weeks for us.':'')+'</div>':'')+
+    (r.priceFlag?'<div class="note" style="margin:0 0 8px"><b>⚠️ '+esc(r.priceFlag.flag||'')+
+      '</b>'+(r.priceFlag.over!=null?' — we are <b>'+Math.round(r.priceFlag.over)+
+      '% over</b> the market average of '+money(r.priceFlag.spinsAvg)+'.':'')+'</div>':'');
+  return '<h2 style="margin-top:15px">'+esc(r.desc||'')+'</h2>'+warn+chips+'<table>'+
+    row('Brand',esc(v(r,'brand')||''))+row('Shelf',esc(v(r,'sub')||''))+
+    row('Stores carrying',r.acv==null?null:(+r.acv).toFixed(1)+'%')+
+    row('&nbsp;&nbsp;a year ago',r.acvYago==null?null:(+r.acvYago).toFixed(1)+'%')+
+    row('Distribution trend',r.acvG==null?null:pct(r.acvG))+
+    row('Units/store/wk trend',r.sppG==null?null:pct(r.sppG))+
+    row('Market price',money(r.mktPrice))+row('Price trend',r.priceG==null?null:pct(r.priceG))+
+    row('Weeks selling (of 4)',r.wkSell)+row('Coast lead',r.coastLead==null?null:(+r.coastLead).toFixed(1)+' pts')+
+    row('Brand distribution',r.brandAcv==null?null:(+r.brandAcv).toFixed(1)+'%')+
+    row('Market age',r.age==null?null:esc(String(v(r,'age')??r.age)))+
+    row('Price per unit',perUnit(r))+
+    row('Rank on this shelf',r.subRank==null?null:'#'+Math.round(r.subRank))+
+    row('SPINS market score',r.mScore==null?null:(+r.mScore).toFixed(2))+
+    (b.filter(Boolean).length?row('&nbsp;&nbsp;why',esc(b.filter(Boolean).join(' · '))):'')+
+    (r.pop==='ours'?row('Our price',money(r.ourPrice))+
+      row('On sale at',r.ourSale==null?null:money(r.ourSale))+
+      row('Our cost',money(r.ourCost))+
+      row('Our margin',r.ourMargin==null?null:(r.ourMargin*100).toFixed(0)+'%')+
+      row('Market price/unit',money(r.mktUnitPrice))+
+      row('Our units 12wk',r.ourUnits12):'')+
+    (r.pop==='candidate'?row('Rank this week','#'+r.rank)+
+      row('Estimated retail',money(r.price))+
+      row('Cost',money(r.cost))+row('Margin at that price',r.margin==null?null:(r.margin*100).toFixed(0)+'%')+
+      row('Projected units/wk',r.proj==null?null:(+r.proj).toFixed(1))+
+      row('Chance it clears the bar',r.pClears==null?null:Math.round(r.pClears*100)+'%'):'')+
+    '</table>'+
+    (r.whatItIs?'<p class="small mut" style="margin-top:8px">'+esc(r.whatItIs)+'</p>':'')+
+    // ⭐ THE INCUMBENT A NEW ITEM MUST BEAT. ⛔ Where our own brand already owns the
+    // shelf, a new item competes with US, which is a different decision entirely.
+    (shelfInfo.bestItem?'<div class="note" style="margin-top:9px"><b>On this shelf we '+
+      'already sell</b> '+shelfInfo.skus+' item(s). Best: <b>'+esc(shelfInfo.bestItem)+
+      '</b> ('+esc(shelfInfo.bestBrand||'')+') at '+money(shelfInfo.bestPrice)+
+      ', '+(+shelfInfo.bestUnitsWk).toFixed(1)+' units/wk.'+
+      (shelfInfo.ownShare!=null&&shelfInfo.ownShare>0.5?
+        ' ⛔ <b>'+Math.round(shelfInfo.ownShare*100)+'% of this shelf is our OWN brand</b> — '+
+        'a new item here competes with us, not with the market.':'')+
+      (shelfInfo.ncOverCoast!=null?' Region index '+(+shelfInfo.ncOverCoast).toFixed(2)+
+        (shelfInfo.ncOverCoast<0.7?' — this shelf under-indexes here.':
+         shelfInfo.ncOverCoast>1.3?' — this shelf over-indexes here.':''):'')+
+      '</div>':'');
+}
+
+function renderSel(){
+  const el=$('sel');
+  if(!sel.length){el.innerHTML='<p class="empty">Click a dot on the map.<br>Click more to compare.</p>';
+    $('trend').innerHTML='';$('detail').innerHTML='';
+    $('tblwrap').innerHTML='<p class="empty">Nothing selected yet.</p>';return;}
+  el.innerHTML=sel.map((s,i)=>{
+    const pl=priceLine(s);
+    return '<div class="selrow" style="align-items:flex-start">'+
+      '<i style="background:'+SELC[i%SELC.length]+';margin-top:4px"></i>'+
+      '<span style="flex:1;min-width:0"><span>'+esc((s.desc||'').slice(0,38))+'</span>'+
+      (pl?'<br><span class="small">'+pl+'</span>':'')+
+      (s.pop==='ours'&&s.ourUnitsWk!=null
+        ? '<br><span class="small mut">'+(+s.ourUnitsWk).toFixed(1)+' units/wk for us</span>':'')+
+      (s.pop==='candidate'&&s.proj!=null
+        ? '<br><span class="small mut">projected '+(+s.proj).toFixed(1)+' units/wk</span>':'')+
+      '</span><button class="x" data-i="'+i+'" aria-label="Remove">×</button></div>';}).join('');
+  el.querySelectorAll('.x').forEach(b=>b.onclick=()=>{sel.splice(+b.dataset.i,1);draw();renderSel();});
+  const tr=$('trend');
+  tr.innerHTML=trendSVG();
+  tr.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{trendMode=b.dataset.t;renderSel();});
+  $('detail').innerHTML=sel.length===1?detail(sel[0]):'';
+  const cols=[['Item','desc'],['Brand','brand'],['Shelf','sub'],['Retail','_price'],
+    ['Cost','_cost'],['Margin','_marg'],['Stores %','acv'],
+    ['Distribution trend','acvG'],['Units trend','sppG'],['Market price','mktPrice'],['Score','mScore']];
+  $('tblwrap').innerHTML='<table><thead><tr>'+
+    cols.map(c=>'<th>'+c[0]+'</th>').join('')+'</tr></thead><tbody>'+
+    sel.map(s=>{const b=priceBits(s);
+      const extra={_price:b.price,_cost:b.cost,_marg:b.m==null?null:b.m*100};
+      return '<tr>'+cols.map(c=>{const k=c[1];
+      let x=k[0]==='_'?extra[k]:(VOC[k]?v(s,k):s[k]);
+      if(k==='_price'||k==='_cost') return '<td>'+esc(x==null?'—':money(x))+'</td>';
+      if(k==='_marg') return '<td>'+esc(x==null?'—':Math.round(x)+'%')+'</td>';
+      if(typeof x==='number')x=k.endsWith('G')?pct(x):k==='mktPrice'?money(x):(+x).toFixed(k==='mScore'?2:1);
+      return '<td>'+esc(x??'—')+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table>';
+}
+
+/* ── controls ── */
+const vb=$('views');
+vb.innerHTML=VIEWS.map(v=>'<button data-v="'+v.id+'" aria-pressed="'+(v.id===view.id)+'">'+v.name+'</button>').join('');
+vb.onclick=e=>{const b=e.target.closest('button'); if(!b)return;
+  view=VIEWS.find(v=>v.id===b.dataset.v);
+  vb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  draw();};
+root.querySelectorAll('.chip[data-pop]').forEach(c=>c.onclick=()=>{
+  const p=c.dataset.pop; pops[p]=!pops[p]; c.setAttribute('aria-pressed',pops[p]); draw();});
+const dsel=$('dept'), ssel=$('sub');
+(VOC.dept||[]).forEach(d=>dsel.add(new Option(d,d)));
+function fillSubs(){ssel.length=1;
+  const s=new Set(ITEMS.filter(r=>!fDept||v(r,'dept')===fDept).map(r=>v(r,'sub')).filter(Boolean));
+  [...s].sort().forEach(x=>ssel.add(new Option(x,x)));}
+fillSubs();
+dsel.onchange=()=>{fDept=dsel.value;fSub='';fillSubs();draw();};
+ssel.onchange=()=>{fSub=ssel.value;draw();};
+let t; $('q').oninput=e=>{clearTimeout(t);
+  t=setTimeout(()=>{fQ=e.target.value.trim();draw();},180);};
+window.addEventListener('resize',()=>{clearTimeout(t);t=setTimeout(draw,120);});
+window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change',draw);
+draw(); renderSel();
+
+}
+
+/* ⭐ LAZY: the map's data is ~22 MB, so it is fetched only when the tab is first
+   opened. ⛔ Never on page load — the review list must stay fast, and most
+   sessions never open the map. */
+let MAPDATA=null, MAPBUSY=false;
+async function loadMarketMap(){
+  if(MAPDATA) return MAPDATA;
+  const ls=await graph(`/sites/${CFG.siteId}/drive/root:/${CFG.payloadDir}:/children?$select=name,id`);
+  const f=(ls.value||[]).filter(x=>/^marketmap_.*\.json$/.test(x.name))
+                        .sort((a,b)=>a.name<b.name?1:-1)[0];
+  if(!f) throw new Error("no market map has been published yet");
+  const t=await getToken();
+  const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${f.id}/content`,
+                      {headers:{Authorization:"Bearer "+t}});
+  if(!r.ok) throw new Error("market map download failed "+r.status);
+  return (MAPDATA=await r.json());
+}
+async function renderMarketMap(el){
+  if(MAPBUSY) return; MAPBUSY=true;
+  el.innerHTML='<div class="center">Loading the market map… <span class="mut">'+
+    '(about 22 MB, once per session)</span></div>';
+  try{ const d=await loadMarketMap(); el.innerHTML=''; initMarketMap(el,d); }
+  catch(e){ el.innerHTML='<div class="center">⛔ '+esc(e.message)+'</div>'; }
+  finally{ MAPBUSY=false; }
+}
+
 document.getElementById("submit").addEventListener("click",async()=>{
   const btn=document.getElementById("submit"), s=document.getElementById("status");
   btn.disabled=true; s.textContent="submitting…";
