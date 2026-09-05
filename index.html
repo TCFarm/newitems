@@ -712,6 +712,38 @@ function tiles(r){
 
 /* ⭐ THE COMPETITOR STRIP. Always all three retailers, always the same order, so
    "Lakewinds no match" is read at a glance rather than hunted for in a sentence. */
+/* ⭐⭐ SPINS' SECOND OPINION. Fitted on the market panel with NONE of our own
+   sales, so it is genuinely independent of our score — and it disagrees often.
+   ⛔⛔ SHOWN AS A BAND, NEVER AS A RANK. 117 distinct values across 3,403 items
+   and 277 of them (8%) share the top value, so "3rd best by market score" is an
+   arbitrary slice of a tie. ⛔ And never averaged with our score: r=0.02 between
+   them, so a blend destroys the disagreement, which is the only thing it adds. */
+const MKT_BINS={weeks:"weeks selling",price:"price trend",acv:"distribution",coast:"coast lead"};
+function mktBand(v){
+  if(v==null) return null;
+  if(v>=1.0)  return ["strong","good"];
+  if(v>=0.4)  return ["positive","good"];
+  if(v>=-0.2) return ["neutral",""];
+  if(v>=-1.0) return ["weak","warn"];
+  return ["poor","bad"];
+}
+function mktPanel(r){
+  const b=mktBand(r.market_score);
+  if(!b) return "";
+  const why=[["weeks",r.mkt_weeks_selling_bin],["price",r.mkt_price_trend_bin],
+             ["acv",r.mkt_acv_trend_bin],["coast",r.mkt_coast_lead_bin]]
+    .filter(x=>x[1]&&!/unknown|no_coast_row/i.test(x[1]))
+    .map(x=>`${MKT_BINS[x[0]]}: <b>${esc(String(x[1]).replace(/_/g," "))}</b>`).join(" · ");
+  // ⛔ name the disagreement when there is one — that is the whole point of a
+  // second axis, and a reader who only sees agreement learns nothing from it.
+  const ours=r.rank!=null&&r.rank<=60, mkt=r.market_score>=1.0;
+  const clash = ours&&r.market_score<-0.2 ? " ⚠️ <b>We rank this highly and the market panel does not.</b>"
+              : (!ours&&mkt) ? " ⭐ <b>The market panel rates this well above where we rank it.</b>" : "";
+  const cls=b[1]==="bad"?"chip bad":b[1]==="good"?"chip good":b[1]==="warn"?"chip warnc":"chip";
+  return `<div class="chips"><span class="${cls}">market panel: ${b[0]}</span>
+    <span class="mut small" style="align-self:center">${why||"no reasons coded"}${clash}
+      &middot; independent of our score, fitted with none of our own sales</span></div>`;
+}
 function compStrip(r){
   const order=[["lakewinds","LW"],["wholefoods","WF"],["target","TGT"]];
   const c=r.competitor_prices||{}, cap=r.competitor_cap, pr=num(r.price);
@@ -1000,6 +1032,7 @@ function rowHtml(r){
        <div class="mapslot-body"><div class="center mut small">scroll here to load</div></div>
      </details>
      ${tiles(r)}
+     ${mktPanel(r)}
      ${compStrip(r)}
      ${r.outside_launch_evidence?`<div class="banner">⚠️ <b>Outside the model's evidence.</b> Only ${acvPct(r.nc_acv)} of stores carry this, below the ${
        r.launch_evidence_min_acv!=null?r.launch_evidence_min_acv.toFixed(1)+"%":"measured"} floor where 95% of our graded launches sit. SPINS could not validate a trajectory rule down here &mdash; their history holds one launch below 5% ACV. The projection is a hypothesis, not a forecast.</div>`:""}
