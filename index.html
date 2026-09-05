@@ -465,6 +465,7 @@ function tiles(r){
         bar=num(r.min_units_wk), p=num(r.p_clears_bar), h=num(r.households_wk),
         pr=num(r.price), mg=num(r.margin_regular), sp=num(r.sale_price),
         sm=num(r.sale_margin), sw=num(r.shelf_weeks), q=r.proposed_qty,
+        acv=num(r.nc_acv), g=num(r.nc_growth_pct),
         foc=num(r.first_order_cost), cap=r.competitor_cap, w=num(r.promo_weeks);
   const cover=(q&&u&&u>0)?q/u:null;
   const over=cap&&pr&&pr>cap.price;
@@ -483,10 +484,28 @@ function tiles(r){
            mg!=null?`${Math.round(mg*100)}% margin`:"", over?"bad":"")}
     ${tile(sp!=null?money(sp):null,"on promo",
            sm!=null?`${Math.round(sm*100)}% margin`:"")}
-    ${tile(q!=null?q:null,"first order",
-           foc!=null?`${money(foc)} committed`:"")}
+    ${/* ⛔ "first order" tile dropped (Jack, 2026-09-04) — the quantity is already
+          in the row control at the top and the committed dollars are in "every
+          factor and figure", so it spent a tile restating what is on screen.
+          ⭐ Replaced by the market trend, which was only visible inside the peer
+          table and is a top-level decision input.
+          ⚠️ LABELLED HONESTLY: nc_growth_pct is the latest 13-week SPINS period
+          against the SAME period a YEAR AGO — it is year-over-year, not "the last
+          13 weeks". Our own peer column is 13wk vs the PRIOR 13wk, a different
+          basis, and calling both "13wk" implied they were comparable. */
+      tile(g!=null?(g>0?"+":"")+g.toFixed(0)+"%":null,"SPINS trend",
+           "13wk vs a year ago", g!=null?(g>=25?"good":g<=-10?"bad":""):"")}
     ${tile(w!=null&&w>0?w.toFixed(0)+" wk":(r.on_promo?"now":null),"deal left",
            r.buy_end?`ends ${esc(r.buy_end)}`:"", w!=null&&w<=1?"warn":"")}
+    ${/* ⭐ %ACV — how much of the region actually carries it (Jack, 2026-09-04:
+          "the percentage of stores in the north central region carrying the SKU -
+          like this one seems questionable to add"). ⛔ A projection built on a
+          handful of stores is a different animal from one built on half the
+          region, and no other tile says which. Bands are measured, not invented:
+          across 3,461 scored rows the median is 7.8 and the top-60 median 17.6. */
+      tile(acv!=null?acv.toFixed(0)+"%":null,"of N.Central stores",
+           acv!=null?(acv<5?"barely distributed":acv<20?"narrow":"widely carried"):"",
+           acv!=null?(acv<5?"bad":acv<20?"warn":"good"):"")}
   </div>`;
 }
 
@@ -563,6 +582,7 @@ function peerRows(list,cand,showSub){
       <td class="n">${num1(p.units_wk_recent!=null?p.units_wk_recent:p.units_wk)}</td>
       <td class="n">${p.families==null?"&mdash;":p.families}</td>
       <td class="n">${p.top_1_share==null?"&mdash;":Math.round(p.top_1_share)+"%"}</td>
+      <td class="n">${p.nc_acv==null?"&mdash;":Math.round(p.nc_acv)+"%"}</td>
       <td class="n">${num1(p.spins_expected_units_wk)}</td>
       <td class="n">${p.vs_market==null?"&mdash;":p.vs_market.toFixed(2)+"\u00d7"}</td>
       <td class="n">${pctCell(p.trend_pct)}</td>
@@ -624,6 +644,7 @@ function candRow(r){
     <td class="n"><b>~${num1(r.proj_units_wk_calibrated)}</b><br><span class="mut small">est</span></td>
     <td class="n">&mdash;<br><span class="mut small">no history</span></td>
     <td class="n">&mdash;<br><span class="mut small">no history</span></td>
+    <td class="n">${r.nc_acv==null?"&mdash;":Math.round(r.nc_acv)+"%"}</td>
     <td class="n">${num1(r.proj_units_wk_calibrated)}</td>
     <td class="n">&mdash;</td>
     <td class="n">&mdash;</td>
@@ -636,7 +657,7 @@ function candRow(r){
    proposed item's numbers in the SAME PLACE every time. Losing the whole table
    when SPINS has not mapped the subcategory made the layout jump and hid the
    candidate's own SPINS figures. */
-const PEER_HEAD = `<tr><th>Brand</th><th>What we list</th><th class="n">Live</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th><th class="n">u/wk</th><th class="n">Families</th><th class="n">Top buyer</th><th class="n">Mkt u/wk</th><th class="n">vs mkt</th><th class="n">Ours 13wk</th><th class="n">SPINS 13wk</th></tr>`;
+const PEER_HEAD = `<tr><th>Brand</th><th>What we list</th><th class="n">Live</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th><th class="n">u/wk</th><th class="n">Families</th><th class="n">Top buyer</th><th class="n">%ACV</th><th class="n">Mkt u/wk</th><th class="n">vs mkt</th><th class="n">Ours 13wk</th><th class="n">SPINS YoY</th></tr>`;
 
 function candOnly(r, why){
   return `<p class="pnote">${why}</p>`
@@ -665,6 +686,10 @@ function peerBlock(r){
     out+=`<p class="pnote" style="margin-top:9px"><b>Related shelves</b> &mdash; the same product in a different storage class. Kept separate on purpose: it is a different shelf decision, but it competes for the same customer.</p>
       <div class="pwrap"><table class="ptab">${head}${peerRows(b.related,cand,true)}</table></div>`+peerNotes(b.related,cand);
   }
+  const acv=num(r.nc_acv);
+  if(acv!=null&&acv<20) out+=`<p class="pnote">⚠️ <b>Only ${acv.toFixed(0)}% of North Central stores carry this</b>${
+    acv<5?" — barely distributed":""}. Across the 3,461 scored candidates the median is 8% and the top 60 sit at 18%, so its projection rests on a narrow base of stores.</p>`;
+  out+=`<p class="pnote"><b>Ours 13wk</b> is our own last 13 weeks against the 13 before it. <b>SPINS YoY</b> is the latest 13-week market period against the same period a year ago &mdash; different bases, so read them side by side, not as one trend.</p>`;
   out+=`<p class="pnote">The highlighted row is the proposed item. Its <b>u/wk is an ESTIMATE</b> (the market projection) &mdash; every other row on that column is what we have actually sold. <b>Families</b>, <b>Top buyer</b>, <b>vs mkt</b> and <b>Ours 13wk</b> are blank for it because it has no sales history with us yet, not because the data is missing.</p>`;
   if(cand) out+=`<p class="pnote">Ours would be <b>${money(cand)}</b>. &#9888; This table is for judgement, not for pricing &mdash; it is size-blind, so never read the median as a price to match.</p>`;
   /* ⭐ WHAT AN ADD HAS HISTORICALLY DONE HERE. A BAND with its n, never a per-item
