@@ -31,6 +31,8 @@ h1{font-size:16px;margin:0;font-weight:650}
 .sub.acv.warn{color:#a1620a}
 .sub.acv.bad{color:#b42318}
 .sub.acv.unk{color:var(--mut);font-weight:400}
+.arw{font-size:11px;vertical-align:2px}
+.arw.up{color:#0d6b3f} .arw.dn{color:#b42318} .arw.fl{color:var(--mut)}
 .tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 .tab{padding:6px 11px;border-radius:7px;border:1px solid var(--line);background:var(--card);
      cursor:pointer;font-size:13px}
@@ -469,6 +471,32 @@ function acvPct(v){
   return Math.round(a)+"%";
 }
 
+/* ⭐ THE ARROW (Jack, 2026-09-04). ⛔ From SPINS' PRE-COMPUTED nc_acv_growth_pct
+   and nothing else — every _yago field pairs with its _quad companion, and
+   dividing it by the 12-week figure on the same row reads +151% on a row whose
+   true move is -20%. That trap is SPINS' own; do not re-derive this. */
+function acvArrow(r){
+  const g=num(r.nc_acv_growth_pct);
+  if(g==null) return "";
+  if(g>=5) return ' <span class="arw up">&#9650;</span>';
+  if(g<=-5) return ' <span class="arw dn">&#9660;</span>';
+  return ' <span class="arw fl">&#9644;</span>';
+}
+function acvSub(r){
+  const g=num(r.nc_acv_growth_pct), a=num(r.nc_acv);
+  const base=a==null?"":a<5?"barely distributed":a<20?"narrow":"widely carried";
+  if(g==null) return base;
+  return `${base} &middot; ${g>0?"+":""}${Math.round(g)}% in a year`;
+}
+const TRENDS={"BEING-DELISTED":["being delisted","bad"],
+  "CONTRACTING":["contracting","bad"],
+  "EXPANDING-BUT-THINNING":["expanding, thinning","warn"],
+  "EXPANDING-AND-HOLDING":["expanding","good"],
+  "STEADY-BUT-ACCELERATING":["steady, selling faster","good"],
+  "STEADY":["steady",""],"no-year-ago-data":["no year-ago data",""]};
+function trendShort(t){ return (TRENDS[t]||[t||null,""])[0]; }
+function trendCls(t){ return (TRENDS[t]||["",""])[1]; }
+
 function acvCls(r){
   const a=num(r.nc_acv);
   if(a==null) return "unk";
@@ -532,9 +560,14 @@ function tiles(r){
           handful of stores is a different animal from one built on half the
           region, and no other tile says which. Bands are measured, not invented:
           across 3,461 scored rows the median is 7.8 and the top-60 median 17.6. */
-      tile(acv!=null?acvPct(acv):null,"of N.Central stores",
-           acv!=null?(acv<5?"barely distributed":acv<20?"narrow":"widely carried"):"",
-           acv!=null?(acv<5?"bad":acv<20?"warn":"good"):"")}
+      tile(acv!=null?acvPct(acv)+acvArrow(r):null,"of N.Central stores",
+           acvSub(r), acv!=null?(acv<5?"bad":acv<20?"warn":"good"):"")}
+    ${/* ⭐ SPINS' own classification of what distribution is DOING. ⛔ BEING-DELISTED
+          is the one that changes a decision outright: other retailers are dropping
+          it. ⚠️ 660 of this week's 3,737 candidates carry it. */
+      tile(trendShort(r.distribution_trend),"distribution",
+           r.nc_acv_growth_pct!=null?`${r.nc_acv_growth_pct>0?"+":""}${Math.round(r.nc_acv_growth_pct)}% ACV vs last year`:"",
+           trendCls(r.distribution_trend))}
   </div>`;
 }
 
@@ -818,6 +851,10 @@ function rowHtml(r){
      ${whatIs(r)}
      ${tiles(r)}
      ${compStrip(r)}
+     ${r.outside_launch_evidence?`<div class="banner">⚠️ <b>Outside the model's evidence.</b> Only ${acvPct(r.nc_acv)} of stores carry this, below the ${
+       r.launch_evidence_min_acv!=null?r.launch_evidence_min_acv.toFixed(1)+"%":"measured"} floor where 95% of our graded launches sit. SPINS could not validate a trajectory rule down here &mdash; their history holds one launch below 5% ACV. The projection is a hypothesis, not a forecast.</div>`:""}
+     ${r.distribution_trend==="BEING-DELISTED"?`<div class="banner">⛔ <b>Other retailers are dropping this.</b> SPINS classifies its distribution as BEING-DELISTED${
+       r.nc_acv_growth_pct!=null?` (${Math.round(r.nc_acv_growth_pct)}% ACV in a year)`:""}.</div>`:""}
      <!-- ⛔ The prose that used to sit here is not deleted - it is the WHY behind
           the tiles and some of it is genuinely load-bearing (the shelf-life cap,
           the beyond-fitted-range probe). It moves one click away so the default
