@@ -458,6 +458,17 @@ function compLine(r){
 /* ⭐ %ACV on the collapsed row — the share of North Central stores carrying it.
    ⛔ Bands are the MEASURED percentiles of the scored universe (median 8%, top-60
    median 18%, 40% of rows under 5%), not round numbers someone liked. */
+/* ⛔ NEVER ROUND A POSITIVE NUMBER TO ZERO (found 2026-09-04: Live More Organics
+   is carried in 0.2% of stores and rendered as "0%", which reads as "carried
+   nowhere" — a different and much stronger claim than "barely carried"). */
+function acvPct(v){
+  const a=num(v);
+  if(a==null) return "&mdash;";
+  if(a<=0) return "0%";
+  if(a<1) return "&lt;1%";
+  return Math.round(a)+"%";
+}
+
 function acvCls(r){
   const a=num(r.nc_acv);
   if(a==null) return "unk";
@@ -465,7 +476,7 @@ function acvCls(r){
 }
 function acvText(r){
   const a=num(r.nc_acv);
-  return a==null ? "%ACV &mdash;" : `${a.toFixed(0)}% of stores`;
+  return a==null ? "%ACV &mdash;" : `${acvPct(a)} of stores`;
 }
 
 /* ⭐ ONE TILE. `cls` colours it only when the number demands an action. */
@@ -521,7 +532,7 @@ function tiles(r){
           handful of stores is a different animal from one built on half the
           region, and no other tile says which. Bands are measured, not invented:
           across 3,461 scored rows the median is 7.8 and the top-60 median 17.6. */
-      tile(acv!=null?acv.toFixed(0)+"%":null,"of N.Central stores",
+      tile(acv!=null?acvPct(acv):null,"of N.Central stores",
            acv!=null?(acv<5?"barely distributed":acv<20?"narrow":"widely carried"):"",
            acv!=null?(acv<5?"bad":acv<20?"warn":"good"):"")}
   </div>`;
@@ -600,7 +611,7 @@ function peerRows(list,cand,showSub){
       <td class="n">${num1(p.units_wk_recent!=null?p.units_wk_recent:p.units_wk)}</td>
       <td class="n">${p.families==null?"&mdash;":p.families}</td>
       <td class="n">${p.top_1_share==null?"&mdash;":Math.round(p.top_1_share)+"%"}</td>
-      <td class="n">${p.nc_acv==null?"&mdash;":Math.round(p.nc_acv)+"%"}</td>
+      <td class="n">${acvPct(p.nc_acv)}</td>
       <td class="n">${num1(p.spins_expected_units_wk)}</td>
       <td class="n">${p.vs_market==null?"&mdash;":p.vs_market.toFixed(2)+"\u00d7"}</td>
       <td class="n">${pctCell(p.trend_pct)}</td>
@@ -662,7 +673,7 @@ function candRow(r){
     <td class="n"><b>~${num1(r.proj_units_wk_calibrated)}</b><br><span class="mut small">est</span></td>
     <td class="n">&mdash;<br><span class="mut small">no history</span></td>
     <td class="n">&mdash;<br><span class="mut small">no history</span></td>
-    <td class="n">${r.nc_acv==null?"&mdash;":Math.round(r.nc_acv)+"%"}</td>
+    <td class="n">${acvPct(r.nc_acv)}</td>
     <td class="n">${num1(r.proj_units_wk_calibrated)}</td>
     <td class="n">&mdash;</td>
     <td class="n">&mdash;</td>
@@ -705,7 +716,7 @@ function peerBlock(r){
       <div class="pwrap"><table class="ptab">${head}${peerRows(b.related,cand,true)}</table></div>`+peerNotes(b.related,cand);
   }
   const acv=num(r.nc_acv);
-  if(acv!=null&&acv<20) out+=`<p class="pnote">⚠️ <b>Only ${acv.toFixed(0)}% of North Central stores carry this</b>${
+  if(acv!=null&&acv<20) out+=`<p class="pnote">⚠️ <b>Only ${acvPct(acv)} of North Central stores carry this</b>${
     acv<5?" — barely distributed":""}. Across the 3,461 scored candidates the median is 8% and the top 60 sit at 18%, so its projection rests on a narrow base of stores.</p>`;
   out+=`<p class="pnote"><b>Ours 13wk</b> is our own last 13 weeks against the 13 before it. <b>SPINS YoY</b> is the latest 13-week market period against the same period a year ago &mdash; different bases, so read them side by side, not as one trend.</p>`;
   out+=`<p class="pnote">The highlighted row is the proposed item. Its <b>u/wk is an ESTIMATE</b> (the market projection) &mdash; every other row on that column is what we have actually sold. <b>Families</b>, <b>Top buyer</b>, <b>vs mkt</b> and <b>Ours 13wk</b> are blank for it because it has no sales history with us yet, not because the data is missing.</p>`;
