@@ -621,10 +621,10 @@ function candRow(r){
     <td class="n"><b>${money(r.price)}</b></td>
     <td class="n">${r.regular_cost==null?"&mdash;":money(r.regular_cost)}</td>
     <td class="n">${mg==null?"&mdash;":Math.round(mg*100)+"%"}</td>
-    <td class="n">&mdash;</td>
-    <td class="n">&mdash;</td>
-    <td class="n">&mdash;</td>
-    <td class="n"><b>${num1(r.proj_units_wk_calibrated)}</b></td>
+    <td class="n"><b>~${num1(r.proj_units_wk_calibrated)}</b><br><span class="mut small">est</span></td>
+    <td class="n">&mdash;<br><span class="mut small">no history</span></td>
+    <td class="n">&mdash;<br><span class="mut small">no history</span></td>
+    <td class="n">${num1(r.proj_units_wk_calibrated)}</td>
     <td class="n">&mdash;</td>
     <td class="n">&mdash;</td>
     <td class="n">${pctCell(r.nc_growth_pct)}</td></tr>`;
@@ -651,6 +651,7 @@ function peerBlock(r){
     out+=`<p class="pnote" style="margin-top:9px"><b>Related shelves</b> &mdash; the same product in a different storage class. Kept separate on purpose: it is a different shelf decision, but it competes for the same customer.</p>
       <div class="pwrap"><table class="ptab">${head}${peerRows(b.related,cand,true)}</table></div>`+peerNotes(b.related,cand);
   }
+  out+=`<p class="pnote">The highlighted row is the proposed item. Its <b>u/wk is an ESTIMATE</b> (the market projection) &mdash; every other row on that column is what we have actually sold. <b>Families</b>, <b>Top buyer</b>, <b>vs mkt</b> and <b>Ours 13wk</b> are blank for it because it has no sales history with us yet, not because the data is missing.</p>`;
   if(cand) out+=`<p class="pnote">Ours would be <b>${money(cand)}</b>. &#9888; This table is for judgement, not for pricing &mdash; it is size-blind, so never read the median as a price to match.</p>`;
   /* ⭐ WHAT AN ADD HAS HISTORICALLY DONE HERE. A BAND with its n, never a per-item
      number - the per-item transfer ratio was measured and rejected as unstable. */
