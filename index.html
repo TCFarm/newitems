@@ -326,6 +326,18 @@ async function graph(path,opts={}){
 const fmt=(v,d=2)=>v===null||v===undefined||v===""?"—":Number(v).toFixed(d);
 const money=v=>v===null||v===undefined||v===""?"—":"$"+Number(v).toFixed(2);
 const pct=v=>v===null||v===undefined||v===""?"—":(Number(v)*100).toFixed(0)+"%";
+/* ⭐ Flatten anything the payload holds into a Text-column-safe string.
+   ⛔ Never assume a payload field is a string — several are lists or objects, and
+   the failure mode is a 400 that loses the whole batch of decisions. */
+function flat(v,max){
+  max=max||255;
+  if(v==null) return "";
+  let out;
+  if(Array.isArray(v)) out=v.map(x=>typeof x==="string"?x:JSON.stringify(x)).join(" · ");
+  else if(typeof v==="object") out=JSON.stringify(v);
+  else out=String(v);
+  return out.slice(0,max);
+}
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 async function loadPayload(){
@@ -2123,11 +2135,14 @@ document.getElementById("submit").addEventListener("click",async()=>{
       bar_multiple_calibrated:r.bar_multiple_calibrated??null,
       margin_regular:r.margin_regular??null, margin_on_promo:r.margin_on_promo??null,
       price_basis:r.price_basis||"", regular_cost_basis:r.regular_cost_basis||"",
-      why:(r.why||"").slice(0,255), why_not:(r.spins_why_not||"").slice(0,255),
-      qty_why:(Array.isArray(r.proposed_qty_why)?r.proposed_qty_why.join(" · ")
-               :(r.proposed_qty_why||"")).slice(0,255),
-      research:(typeof r.stage2==="string"?r.stage2
-                :r.stage2?JSON.stringify(r.stage2):"").slice(0,255),
+      /* ⛔⛔ THESE ARE ARRAYS AND OBJECTS, NOT STRINGS. `why` is a list of
+         reasons, `spins_why_not` a list of gate objects, `stage2` an object.
+         Calling .slice() on an array returns an ARRAY, and posting that to a Text
+         column fails the whole submit with a bare HTTP 400 — every decision on
+         screen lost, with no indication which field caused it. Found before the
+         first real submission, 2026-09-05. ⭐ `flat()` normalises anything. */
+      why:flat(r.why), why_not:flat(r.spins_why_not),
+      qty_why:flat(r.proposed_qty_why), research:flat(r.stage2),
       /* ⭐ the independent second opinion, and the four coded reasons behind it */
       market_score:r.market_score??null,
       market_score_why:[r.mkt_weeks_selling_bin,r.mkt_price_trend_bin,
