@@ -2108,6 +2108,52 @@ document.getElementById("submit").addEventListener("click",async()=>{
       proj_units_wk_calibrated:r.proj_units_wk_calibrated??null,
       p_clears_bar:r.p_clears_bar??null, carried_state:r.carried_state||"",
       on_promo:String(!!r.on_promo), buy_start:r.buy_start||"", buy_end:r.buy_end||"",
+      /* ⭐⭐ THE DECISION RECORD IS A DATED SNAPSHOT OF WHAT THE REVIEWER SAW.
+         ⛔ The schema had 20 of these columns and the page filled NONE of them, so
+         every decision recorded WHAT was approved and almost nothing about WHY, or
+         against which build. Backfilling later is guesswork about what was on
+         screen at the time — so it is captured at the moment of the decision. */
+      sku:r.lapsed_sku||"", unit_of_sale:r.unit_of_sale??null,
+      shelf_weeks:r.shelf_weeks??null, promo_source:r.promo_source||"",
+      nc_acv:r.nc_acv??null, nc_growth_pct:r.nc_growth_pct??null,
+      our_units_wk_subcat:r.our_units_wk_subcat??null,
+      proj_units_wk:r.proj_units_wk??null,
+      proj_p10:r.proj_p10??null, proj_p90:r.proj_p90??null,
+      min_units_wk:r.min_units_wk??null,
+      bar_multiple_calibrated:r.bar_multiple_calibrated??null,
+      margin_regular:r.margin_regular??null, margin_on_promo:r.margin_on_promo??null,
+      price_basis:r.price_basis||"", regular_cost_basis:r.regular_cost_basis||"",
+      why:(r.why||"").slice(0,255), why_not:(r.spins_why_not||"").slice(0,255),
+      qty_why:(Array.isArray(r.proposed_qty_why)?r.proposed_qty_why.join(" · ")
+               :(r.proposed_qty_why||"")).slice(0,255),
+      research:(typeof r.stage2==="string"?r.stage2
+                :r.stage2?JSON.stringify(r.stage2):"").slice(0,255),
+      /* ⭐ the independent second opinion, and the four coded reasons behind it */
+      market_score:r.market_score??null,
+      market_score_why:[r.mkt_weeks_selling_bin,r.mkt_price_trend_bin,
+                        r.mkt_acv_trend_bin,r.mkt_coast_lead_bin]
+                       .filter(Boolean).join(" · ").slice(0,255),
+      /* ⛔⛔ THE RISK FLAGS. Approving an item DESPITE "outside the model's
+         evidence" is a different decision from approving a well-evidenced one, and
+         without this the two are indistinguishable in the record forever. */
+      risk_flags:[r.outside_launch_evidence?"outside-launch-evidence":"",
+                  r.beyond_fitted_range?"beyond-fitted-range":"",
+                  (r.nc_acv!=null&&r.nc_acv<10)?"thin-distribution":"",
+                  r.distribution_trend==="BEING-DELISTED"?"being-delisted":"",
+                  (r.weeks_selling_quad!=null&&r.weeks_selling_quad<=2)?"sporadic":"",
+                  r.needs_price?"needs-price":"",
+                  r.price_warning?"price-warning":""].filter(Boolean).join(" · ")||"none",
+      loss_leader:r.loss_leader?(r.loss_leader.qualifies?"qualifies":"assessed, refused")+
+                  (r.loss_leader.ratio!=null?` · ${r.loss_leader.ratio}x`:"")
+                  +` · ${(r.loss_leader.failed||[]).join(",")}`.slice(0,120):"",
+      /* ⭐ PROVENANCE: which market period and which build the reviewer saw, so a
+         decision can be judged against the model as it WAS, not as it became. */
+      spins_period:(PAYLOAD.meta.spins_state||{}).data_period_end||"",
+      build_stamp:[PAYLOAD.meta.built_at||"",
+                   (PAYLOAD.meta.spins_state||{}).projected_on?
+                     "projected "+(PAYLOAD.meta.spins_state||{}).projected_on:"",
+                   (PAYLOAD.meta.spins_state||{}).db_mtime||""]
+                  .filter(Boolean).join(" · ").slice(0,255),
       decision:d.decision, approved_qty:d.approved_qty??null,
       reviewer:account, decided_at:new Date().toISOString().slice(0,19),
       reviewer_note:d.reviewer_note||""};
