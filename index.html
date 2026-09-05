@@ -71,6 +71,35 @@ button.mini.on[data-d=question]{background:var(--warn);color:#fff;border-color:v
 .cell{background:#fafbfc;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
 .cell b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
 .cell span{color:var(--mut);font-size:11px}
+/* ⛔⛔ THE DETAIL PANE IS A DASHBOARD, NOT AN ESSAY (ruling: Jack, 2026-09-04:
+   "this is a wall of text, impossible to read 50 items worth and not be burned
+   out"). Every product shows the SAME tiles in the SAME order, so the eye learns
+   one layout and then only reads what changed. A missing value is a dash, never a
+   missing tile - a moving layout is what makes a list unscannable. */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+  gap:7px;margin:11px 0}
+.t{background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:7px 9px;
+  min-height:52px}
+.t b{display:block;font-size:17px;line-height:1.15;font-variant-numeric:tabular-nums}
+.t s{display:block;color:var(--mut);font-size:10.5px;text-decoration:none;
+  text-transform:uppercase;letter-spacing:.03em;margin-top:1px}
+.t i{display:block;color:var(--mut);font-size:11px;font-style:normal;margin-top:2px}
+.t.good{background:#f0fbf4;border-color:#bfe5cd}
+.t.warn{background:#fff7ed;border-color:#f6d9ae}
+.t.bad{background:#fef2f2;border-color:#f6c9c9}
+.t.dim b{color:var(--mut)}
+/* the competitor strip - one line, same three retailers, same order, always */
+.comp{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:9px 0}
+.cp{border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-size:12px;
+  background:#fff;white-space:nowrap}
+.cp.hit{border-color:#bcd4f0;background:#f2f7fd}
+.cp.none{color:var(--mut)}
+.cp .r{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;
+  margin-right:5px}
+.verdict{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px}
+.verdict.over{background:#fef2f2;color:#b42318;border:1px solid #f6c9c9}
+.verdict.ok{background:#f0fbf4;color:#0d6b3f;border:1px solid #bfe5cd}
+.verdict.none{background:#f6f7f8;color:var(--mut);border:1px solid var(--line)}
 .whatis{background:#f4f8ff;border:1px solid #cfe0f7;border-left:3px solid #3b76c9;
   border-radius:7px;padding:9px 11px;margin:0 0 11px;font-size:14px;line-height:1.45}
 .whatis .fx{color:var(--mut);font-size:11.5px;margin-top:5px;display:block}
@@ -421,6 +450,68 @@ function compLine(r){
   return t;
 }
 
+/* ⭐ ONE TILE. `cls` colours it only when the number demands an action. */
+function tile(v, label, sub, cls){
+  return `<div class="t ${cls||""}${v==null||v===""?" dim":""}">
+    <b>${v==null||v===""?"&mdash;":v}</b><s>${label}</s>${sub?`<i>${sub}</i>`:""}</div>`;
+}
+
+/* ⛔⛔ THE SAME EIGHT TILES, THE SAME ORDER, EVERY PRODUCT. A reviewer working 50
+   rows should learn the layout once and then read only what changed. ⛔ Never
+   hide a tile because its value is missing - show a dash. A grid that reflows per
+   product is exactly what made the prose version unreadable. */
+function tiles(r){
+  const u=num(r.proj_units_wk_calibrated), lo=num(r.proj_p10), hi=num(r.proj_p90),
+        bar=num(r.min_units_wk), p=num(r.p_clears_bar), h=num(r.households_wk),
+        pr=num(r.price), mg=num(r.margin_regular), sp=num(r.sale_price),
+        sm=num(r.sale_margin), sw=num(r.shelf_weeks), q=r.proposed_qty,
+        foc=num(r.first_order_cost), cap=r.competitor_cap, w=num(r.promo_weeks);
+  const cover=(q&&u&&u>0)?q/u:null;
+  const over=cap&&pr&&pr>cap.price;
+  return `<div class="tiles">
+    ${tile(u!=null?u.toFixed(1):null,"units / wk",
+           lo!=null&&hi!=null?`range ${lo.toFixed(1)}\u2013${hi.toFixed(1)}`:"",
+           bar!=null&&u!=null?(u>=bar?"good":"warn"):"")}
+    ${tile(h!=null?h.toFixed(1):null,"households / wk",
+           u&&h!=null?`${(h/u).toFixed(2)} per unit`:"")}
+    ${tile(p!=null?Math.round(p*100)+"%":null,"clear the floor",
+           bar!=null?`floor ${bar.toFixed(1)}/wk`:"", p!=null?(p>=0.5?"good":p<0.25?"bad":"warn"):"")}
+    ${tile(sw!=null?sw.toFixed(0)+" wk":null,"shelf life",
+           cover?`${q} clears in ${cover.toFixed(0)}`:"",
+           sw!=null&&cover?(cover>sw?"bad":"") :"")}
+    ${tile(pr!=null?money(pr):null,"our price",
+           mg!=null?`${Math.round(mg*100)}% margin`:"", over?"bad":"")}
+    ${tile(sp!=null?money(sp):null,"on promo",
+           sm!=null?`${Math.round(sm*100)}% margin`:"")}
+    ${tile(q!=null?q:null,"first order",
+           foc!=null?`${money(foc)} committed`:"")}
+    ${tile(w!=null&&w>0?w.toFixed(0)+" wk":(r.on_promo?"now":null),"deal left",
+           r.buy_end?`ends ${esc(r.buy_end)}`:"", w!=null&&w<=1?"warn":"")}
+  </div>`;
+}
+
+/* ⭐ THE COMPETITOR STRIP. Always all three retailers, always the same order, so
+   "Lakewinds no match" is read at a glance rather than hunted for in a sentence. */
+function compStrip(r){
+  const order=[["lakewinds","LW"],["wholefoods","WF"],["target","TGT"]];
+  const c=r.competitor_prices||{}, cap=r.competitor_cap, pr=num(r.price);
+  const pills=order.map(([k,lbl])=>{
+    const v=c[k];
+    if(!v||v.price==null) return `<span class="cp none"><span class="r">${lbl}</span>no match</span>`;
+    const exact=v.match_type==="upc_exact";
+    return `<span class="cp${exact?" hit":""}"><span class="r">${lbl}</span>${money(v.price)}${
+      exact?"":" <span class=\"mut\">name</span>"}${
+      v.age_days?` <span class="mut">${v.age_days}d</span>`:""}</span>`;
+  }).join("");
+  let verdict;
+  if(!cap) verdict=`<span class="verdict none">no UPC match &middot; priced on cost + margin</span>`;
+  else if(pr!=null&&pr>cap.price)
+    verdict=`<span class="verdict over">${money(pr-cap.price)} over ${money(cap.price)}${
+      cap.confidence==="high"?"":" &middot; "+esc(cap.confidence)}</span>`;
+  else verdict=`<span class="verdict ok">at or under ${money(cap.price)}</span>`;
+  return `<div class="comp">${pills}${verdict}</div>`;
+}
+
 /* the single strongest reason it sits where it does */
 function rankLine(r){
   const c=(r.components||[]).filter(x=>Array.isArray(x)&&x[1]!==1);
@@ -512,6 +603,33 @@ function peerNotes(list,cand){
   return out.length?`<p class="pnote">${out.join(" ")}</p>`:"";
 }
 
+/* ⭐ THE PROPOSED ITEM, IN THE SAME TABLE AND THE SAME COLUMNS (ruling: Jack,
+   2026-09-04: "a way to see the proposed item next to this graph so that it shows
+   the estimated amounts and the detail about SPINS 13 weeks for this item and how
+   we estimate it will be performing in comparison to the existing ones").
+   ⛔ THE HONEST COLUMN MAPPING MATTERS: a new item has NO history here, so
+   "u/wk", "Families", "Top buyer", "vs mkt" and "Ours 13wk" are all dashes. Its
+   number goes in "Mkt u/wk", because a projection is what the MARKET says it
+   would do - putting an estimate in the "we sell" column would compare it against
+   measured sales and quietly flatter it. */
+function candRow(r){
+  const mg=num(r.margin_regular);
+  return `<tr class="me">
+    <td><b>${esc(r.brand||"")}</b></td>
+    <td><b>${esc(r.description||"")}</b> <span class="mut small">proposed</span></td>
+    <td class="n"><span class="mut small">new</span></td>
+    <td class="n"><b>${money(r.price)}</b></td>
+    <td class="n">${r.regular_cost==null?"&mdash;":money(r.regular_cost)}</td>
+    <td class="n">${mg==null?"&mdash;":Math.round(mg*100)+"%"}</td>
+    <td class="n">&mdash;</td>
+    <td class="n">&mdash;</td>
+    <td class="n">&mdash;</td>
+    <td class="n"><b>${num1(r.proj_units_wk_calibrated)}</b></td>
+    <td class="n">&mdash;</td>
+    <td class="n">&mdash;</td>
+    <td class="n">${pctCell(r.nc_growth_pct)}</td></tr>`;
+}
+
 function peerBlock(r){
   const P=(PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers)||null;
   if(!P) return `<p class="pnote">No peer table in this payload${
@@ -523,10 +641,11 @@ function peerBlock(r){
   let out=`<p class="pnote">We list <b>${st.n_listed}</b> item(s) in <b>${esc(b.subcategory)}</b> &middot; ${st.n_active} active &middot; ${st.n_selling} sold anything in 12 weeks &middot; together <b>${fmt(st.units_wk_total,2)}</b> u/wk${
     st.price_min!=null?` &middot; priced ${money(st.price_min)}&ndash;${money(st.price_max)}`:""}.</p>`;
   if(b.same&&b.same.length){
-    out+=`<div class="pwrap"><table class="ptab">${head}${peerRows(b.same,cand,false)}</table></div>`+peerNotes(b.same,cand);
+    out+=`<div class="pwrap"><table class="ptab">${head}${candRow(r)}${peerRows(b.same,cand,false)}</table></div>`+peerNotes(b.same,cand);
     if(b.same_truncated) out+=`<p class="pnote">+ ${b.same_truncated} more not shown.</p>`;
   } else {
-    out+=`<p class="pnote">We list nothing in this subcategory today &mdash; this would be the first.</p>`;
+    out+=`<div class="pwrap"><table class="ptab">${head}${candRow(r)}</table></div>`
+      +`<p class="pnote">We list nothing else in this subcategory today &mdash; this would be the first.</p>`;
   }
   if(b.related&&b.related.length){
     out+=`<p class="pnote" style="margin-top:9px"><b>Related shelves</b> &mdash; the same product in a different storage class. Kept separate on purpose: it is a different shelf decision, but it competes for the same customer.</p>
@@ -622,13 +741,23 @@ function rowHtml(r){
    </div>
    <div class="body">
      ${whatIs(r)}
-     <p class="lead">${sellLine(r)}</p>
-     ${reachLine(r)?`<p class="lead">${reachLine(r)}</p>`:""}
-     <p class="lead">${moneyLine(r)}</p>
-     <p class="lead">${buyLine(r)}</p>
-     ${lifeLine(r)?`<p class="lead">${lifeLine(r)}</p>`:""}
-     ${windowLine(r)?`<p class="lead">${windowLine(r)}</p>`:""}
-     ${compLine(r)?`<p class="lead">${compLine(r)}</p>`:""}
+     ${tiles(r)}
+     ${compStrip(r)}
+     <!-- ⛔ The prose that used to sit here is not deleted - it is the WHY behind
+          the tiles and some of it is genuinely load-bearing (the shelf-life cap,
+          the beyond-fitted-range probe). It moves one click away so the default
+          view stays scannable across 50 rows. -->
+     <details class="raw"><summary class="mut small">the numbers in words</summary>
+       <p class="lead">${sellLine(r)}</p>
+       ${reachLine(r)?`<p class="lead">${reachLine(r)}</p>`:""}
+       <p class="lead">${moneyLine(r)}</p>
+       <p class="lead">${buyLine(r)}</p>
+       ${lifeLine(r)?`<p class="lead">${lifeLine(r)}</p>`:""}
+       ${windowLine(r)?`<p class="lead">${windowLine(r)}</p>`:""}
+       ${compLine(r)?`<p class="lead">${compLine(r)}</p>`:""}
+       <p class="mut small">Ranked by: ${rankLine(r)}</p>
+       ${whyNotLine(r)?`<p class="mut small">${whyNotLine(r)}</p>`:""}
+     </details>
      ${imgs?`<div class="imgs">${imgs}</div>`:""}
      ${certs?`<div class="chips">${certs}</div>`:""}
      ${r.demote_reason?`<div class="banner">${esc(r.demote_reason)}</div>`:""}
@@ -638,8 +767,6 @@ function rowHtml(r){
          h.approved_qty?` (qty ${esc(h.approved_qty)})`:""}${h.note?` — ${esc(h.note)}`:""}`).join("<br>")
        }</div>`:""}
      ${(r.why||[]).filter(w=>String(w).includes("UNVIABLE")).map(w=>`<div class="banner">${esc(w)}</div>`).join("")}
-     <p class="mut small">Ranked by: ${rankLine(r)}</p>
-     ${whyNotLine(r)?`<p class="mut small">${whyNotLine(r)}</p>`:""}
      <details class="raw"><summary class="mut small">what we already sell here</summary>
        ${peerBlock(r)}
      </details>
