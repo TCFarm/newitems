@@ -463,6 +463,39 @@ function compLine(r){
 /* ⛔ NEVER ROUND A POSITIVE NUMBER TO ZERO (found 2026-09-04: Live More Organics
    is carried in 0.2% of stores and rendered as "0%", which reads as "carried
    nowhere" — a different and much stronger claim than "barely carried"). */
+// ⭐⭐ LOSS LEADER — shown ONLY where there was a real decision to make. A row with
+// no competitor price is not a loss-leader question, and labelling all 3,700 of
+// them would bury the handful that are.
+// ⛔ It shows the REFUSALS too, with the binding reason. A model that only ever
+// displays its approvals teaches the reader nothing about where its line sits,
+// and this one refuses far more often than it approves.
+const LL_LABEL={price_visible:"Can a customer price-check us?",
+  full_shop_marker:"Does this shelf mark a full shop?",
+  not_already_theirs:"Do specialty households NOT already buy it?",
+  basket_anchor:"Is the rest of the shop bigger with it?",
+  has_a_price_cut:"Is there actually a price cut?",
+  pays_for_itself:"Does the basket beat the margin we give up?",
+  budget:"Is there budget left?",
+  per_department:"Room left in this department?"};
+function llBanner(r){
+  const a=r.loss_leader; if(!a) return "";
+  const rows=Object.keys(a.conditions||{}).map(k=>{
+    const c=a.conditions[k], ok=c.ok===true, unk=c.ok===null;
+    return `<tr><td style="white-space:nowrap">${unk?"❔":ok?"✅":"⛔"} ${esc(LL_LABEL[k]||k)}</td>`
+         + `<td class="mut">${esc(c.why||"")}</td></tr>`;}).join("");
+  const head = a.qualifies
+    ? `⭐ <b>Worth carrying at a thin margin.</b> Returns <b>${a.ratio}\u00d7</b> the gross`
+      + ` profit we give up, costing <b>${money(a.weekly_gp_cost)}/wk</b> of the`
+      + ` ${money(a.budget_per_week)} weekly budget.`
+    : `<b>Not a loss leader.</b> ${esc((a.conditions[(a.failed||[])[0]]||{}).why||"")}`;
+  return `<div class="banner"${a.qualifies?' style="background:#eefaf0;border-color:#bfe3c8;color:#1a6b32"':''}>`
+       + `${head}<details style="margin-top:6px"><summary class="mut small">`
+       + `all ${Object.keys(a.conditions||{}).length} tests</summary>`
+       + `<table class="small" style="margin-top:6px">${rows}</table>`
+       + `<p class="mut small">⚠️ The basket figure is a CORRELATION measured on households who`
+       + ` already buy this shelf. Only a deliberate price test proves a discount causes it.</p>`
+       + `</details></div>`;
+}
 function acvPct(v){
   const a=num(v);
   if(a==null) return "&mdash;";
@@ -876,6 +909,9 @@ function rowHtml(r){
        r.launch_evidence_min_acv!=null?r.launch_evidence_min_acv.toFixed(1)+"%":"measured"} floor where 95% of our graded launches sit. SPINS could not validate a trajectory rule down here &mdash; their history holds one launch below 5% ACV. The projection is a hypothesis, not a forecast.</div>`:""}
      ${(r.weeks_selling_quad!=null&&r.weeks_selling_quad<=2&&(num(r.nc_units_quad)||0)>=50)?`<div class="banner">⛔ <b>Selling in only ${r.weeks_selling_quad} of 4 weeks despite real volume.</b> On SPINS' held-out data that shape carries a <b>median of ZERO units</b> six quarters out &mdash; a discontinuation already in progress, not a slow start.</div>`:""}
      ${(num(r.nc_price_growth_pct)!=null&&num(r.nc_price_growth_pct)<=-10)?`<div class="banner">⚠️ <b>Its market price is falling ${Math.abs(Math.round(r.nc_price_growth_pct))}%.</b> A falling unit price is the shape of an item being discounted toward a delist, not a bargain arriving.</div>`:""}
+     ${r.repriced_by_competitor?`<div class="banner">💲 <b>Price matched down to ${money(r.repriced_by_competitor.to)}</b> from ${money(r.repriced_by_competitor.from)} &mdash; ${esc(r.repriced_by_competitor.basis)}.${
+       r.repriced_by_competitor.warning?` <b>⚠️ ${esc(r.repriced_by_competitor.warning)}</b> &mdash; deliberate: a staple we cannot be dearer on.`:""}</div>`:""}
+     ${llBanner(r)}
      ${r.distribution_trend==="BEING-DELISTED"?`<div class="banner">⛔ <b>Other retailers are dropping this.</b> SPINS classifies its distribution as BEING-DELISTED${
        r.nc_acv_growth_pct!=null?` (${Math.round(r.nc_acv_growth_pct)}% ACV in a year)`:""}.</div>`:""}
      <!-- ⛔ The prose that used to sit here is not deleted - it is the WHY behind
