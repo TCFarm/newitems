@@ -26,6 +26,11 @@ header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px
        padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 h1{font-size:16px;margin:0;font-weight:650}
 .sub{color:var(--mut);font-size:12px}
+.sub.acv{font-size:11px;font-weight:600;margin-top:1px}
+.sub.acv.ok{color:#0d6b3f}
+.sub.acv.warn{color:#a1620a}
+.sub.acv.bad{color:#b42318}
+.sub.acv.unk{color:var(--mut);font-weight:400}
 .tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 .tab{padding:6px 11px;border-radius:7px;border:1px solid var(--line);background:var(--card);
      cursor:pointer;font-size:13px}
@@ -450,6 +455,19 @@ function compLine(r){
   return t;
 }
 
+/* ⭐ %ACV on the collapsed row — the share of North Central stores carrying it.
+   ⛔ Bands are the MEASURED percentiles of the scored universe (median 8%, top-60
+   median 18%, 40% of rows under 5%), not round numbers someone liked. */
+function acvCls(r){
+  const a=num(r.nc_acv);
+  if(a==null) return "unk";
+  return a<5 ? "bad" : a<20 ? "warn" : "ok";
+}
+function acvText(r){
+  const a=num(r.nc_acv);
+  return a==null ? "%ACV &mdash;" : `${a.toFixed(0)}% of stores`;
+}
+
 /* ⭐ ONE TILE. `cls` colours it only when the number demands an action. */
 function tile(v, label, sub, cls){
   return `<div class="t ${cls||""}${v==null||v===""?" dim":""}">
@@ -760,7 +778,13 @@ function rowHtml(r){
        <div class="brand">${esc(r.brand||"")} · ${esc(r.subcategory||"")}</div>
        <div class="chips">${factorChips(r)}</div></div>
      <div class="nums"><div class="big">${money(r.price)}</div>
-       <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk</div></div>
+       <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk</div>
+       <!-- DISTRIBUTION ON THE COLLAPSED ROW (Jack, 2026-09-04). The list is the
+            working surface - approve, decline and quantity are all here - so the
+            fact that most decides whether a projection is trustworthy has to be
+            here too. Under 20 percent of the region is amber, under 5 is red, and
+            the bands are the measured percentiles of this very list. -->
+       <div class="sub acv ${acvCls(r)}">${acvText(r)}</div></div>
      <!-- ⭐ DECIDE WITHOUT EXPANDING (Jack, 2026-09-04). The spec always said three
           taps at card level; the first build buried them in the detail pane, so
           working the list meant opening every row. The rowacts wrapper stops the
