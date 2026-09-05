@@ -630,14 +630,28 @@ function candRow(r){
     <td class="n">${pctCell(r.nc_growth_pct)}</td></tr>`;
 }
 
+/* ⛔ THE TABLE ALWAYS RENDERS, EVEN WITH NOTHING TO COMPARE AGAINST (ruling:
+   Jack, 2026-09-04: "even if we dont have comparison items can get the SPINS and
+   estimated data in the same format?"). A reviewer working 50 rows should find the
+   proposed item's numbers in the SAME PLACE every time. Losing the whole table
+   when SPINS has not mapped the subcategory made the layout jump and hid the
+   candidate's own SPINS figures. */
+const PEER_HEAD = `<tr><th>Brand</th><th>What we list</th><th class="n">Live</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th><th class="n">u/wk</th><th class="n">Families</th><th class="n">Top buyer</th><th class="n">Mkt u/wk</th><th class="n">vs mkt</th><th class="n">Ours 13wk</th><th class="n">SPINS 13wk</th></tr>`;
+
+function candOnly(r, why){
+  return `<p class="pnote">${why}</p>`
+    + `<div class="pwrap"><table class="ptab">${PEER_HEAD}${candRow(r)}</table></div>`
+    + `<p class="pnote">The highlighted row is the proposed item. Its <b>u/wk is an ESTIMATE</b> (the market projection). <b>Families</b>, <b>Top buyer</b>, <b>vs mkt</b> and <b>Ours 13wk</b> are blank because it has no sales history with us yet.</p>`;
+}
+
 function peerBlock(r){
   const P=(PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers)||null;
-  if(!P) return `<p class="pnote">No peer table in this payload${
-    PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers_note?" ("+esc(PAYLOAD.meta.peers_note)+")":""}.</p>`;
+  if(!P) return candOnly(r, `No peer table in this payload${
+    PAYLOAD&&PAYLOAD.meta&&PAYLOAD.meta.peers_note?" ("+esc(PAYLOAD.meta.peers_note)+")":""}, so there is nothing to compare against &mdash; the proposed item's own figures are below.`);
   const b=P[r.subcategory];
-  if(!b) return `<p class="pnote">SPINS has not mapped <b>${esc(r.subcategory||"this subcategory")}</b> to our catalogue, so we cannot say what we already sell in it. That is a gap in the mapping, not evidence that we sell nothing.</p>`;
+  if(!b) return candOnly(r, `SPINS has not mapped <b>${esc(r.subcategory||"this subcategory")}</b> to our catalogue, so we cannot say what we already sell in it. That is a gap in the mapping, <b>not</b> evidence that we sell nothing &mdash; the proposed item's own figures are below.`);
   const st=b.stats||{}, cand=r.price;
-  const head=`<tr><th>Brand</th><th>What we list</th><th class="n">Live</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th><th class="n">u/wk</th><th class="n">Families</th><th class="n">Top buyer</th><th class="n">Mkt u/wk</th><th class="n">vs mkt</th><th class="n">Ours 13wk</th><th class="n">SPINS 13wk</th></tr>`;
+  const head=PEER_HEAD;
   let out=`<p class="pnote">We list <b>${st.n_listed}</b> item(s) in <b>${esc(b.subcategory)}</b> &middot; ${st.n_active} active &middot; ${st.n_selling} sold anything in 12 weeks &middot; together <b>${fmt(st.units_wk_total,2)}</b> u/wk${
     st.price_min!=null?` &middot; priced ${money(st.price_min)}&ndash;${money(st.price_max)}`:""}.</p>`;
   if(b.same&&b.same.length){
