@@ -1174,6 +1174,15 @@ document.addEventListener("input",e=>{
   if(n) cur.reviewer_note = n.value;
   cur._dirty=true; tally();
 });
+/* ⛔⛔ CAPTURE PHASE, NOT BUBBLE. The `.rowacts` wrapper carries
+   `onclick="event.stopPropagation()"` so a mis-tap cannot collapse the row you are
+   editing — but this decision handler is delegated on `document`, and
+   stopPropagation on an ancestor kills a BUBBLE-phase document listener outright.
+   Result: the row-level approve/decline/question buttons did nothing at all, from
+   the day they were added (2026-09-04) until 2026-09-05. Verified with a minimal
+   repro: bubble-phase listener fired 0 times, capture-phase fired 1.
+   ⭐ Capture runs document -> target, so this fires BEFORE the wrapper can stop
+   anything, and the wrapper still does its job for every other listener. */
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-tab]");
   if(t){document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x===t));
@@ -1199,7 +1208,7 @@ document.addEventListener("click",e=>{
     rowEl.classList.add("decided");
     tally();
   }
-});
+}, true);
 /* ══ MARKET POSITION MAP ══ ported from output/market_map/. ⛔ Data is NOT
    embedded: it is fetched from SharePoint on first open, so the page stays
    code-only and the map is not bound by any embedded-size limit. */
