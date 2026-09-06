@@ -1130,6 +1130,22 @@ function render(){
   const st=PAYLOAD.meta.spins_state||{};
   let head="";
   if(st.note) head+=`<div class="banner">${esc(st.note)}</div>`;
+  if(TAB==="done"){
+    /* ⭐ WHAT YOU ACTUALLY COMMITTED. The count alone never showed the cash, and
+       the cash is the thing worth checking before the drain turns it into an
+       order. ⛔ Uses promo cost where there is one, because that is what we pay. */
+    const dec=Object.entries(DECIDED).map(([u,d])=>({u,d,r:d._row||ROWS.find(x=>x.upc===u)||{}}));
+    const ap=dec.filter(x=>x.d.decision==="approve");
+    const units=ap.reduce((n,x)=>n+(Number(x.d.approved_qty)||0),0);
+    const cash=ap.reduce((n,x)=>n+((Number(x.d.approved_qty)||0)*
+                (Number(x.r.promo_cost)||Number(x.r.regular_cost)||0)),0);
+    const by=c=>dec.filter(x=>x.d.decision===c).length;
+    head+=`<div class="banner"><b>${ap.length} approved</b> &middot; ${units} units
+      &middot; <b>${money(cash)}</b> committed at cost
+      &middot; ${by("decline")} declined &middot; ${by("defer")} deferred
+      &middot; ${by("question")} question(s).
+      <span class="mut">Nothing is ordered until the drain runs.</span></div>`;
+  }
   if(TAB==="all") head+=`<div class="banner">Every promo item we do not carry, ranked. Below the
      recommended set these are shown for completeness — the order is the same score.</div>`;
   m.innerHTML=head+(v.length?v.map(rowHtml).join(""):`<div class="center">nothing here</div>`);
@@ -2213,6 +2229,16 @@ document.getElementById("submit").addEventListener("click",async()=>{
   }
   s.textContent = fail?`⛔ ${ok} saved, ${fail} FAILED — see the console and retry`
                       :`✓ ${ok} decision(s) saved`;
+  /* ⭐ LAND ON WHAT YOU JUST DID (Jack, 2026-09-05). Submitting used to drop every
+     decided row out of the Recommended list and leave a bare count — 58 rows
+     vanishing at the exact moment you want to check what you committed.
+     ⛔ Only on a clean submit: if anything failed, stay put so the failures are
+     still on screen next to the retry. */
+  if(!fail){
+    TAB="done";
+    document.querySelectorAll(".tab").forEach(x=>
+      x.setAttribute("aria-selected", x.dataset.tab==="done"));
+  }
   tally(); render();
 });
 
