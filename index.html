@@ -236,6 +236,7 @@ details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-
     <button class="tab" role="tab" data-tab="all" aria-selected="false">Everything on promo</button>
     <button class="tab" role="tab" data-tab="done" aria-selected="false">Decided</button>
     <button class="tab" role="tab" data-tab="map" aria-selected="false">Market map</button>
+    <select id="week" aria-label="which order week" style="margin-left:8px"></select>
   </div>
 </header>
 <main id="main"><div class="center">Loading…</div></main>
@@ -266,6 +267,8 @@ const GRAPH="https://graph.microsoft.com/v1.0";
 const store=sessionStorage;
 let token=null,tokenExp=0,refreshTok=null,account="";
 let PAYLOAD=null, ROWS=[], DECIDED={}, LISTID=null, TAB="reco";
+/* ⭐ which order week we are deciding, and every week available to switch to */
+let WEEKS=[], WANT_SUNDAY=(new URLSearchParams(location.search)).get("sunday")||null;
 
 /* ── auth: authorization code + PKCE (same shape as the receiving page) ── */
 const rand=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);
@@ -347,6 +350,16 @@ async function loadPayload(){
   const files=(ls.value||[]).filter(f=>/^payload_.*\.json$/.test(f.name))
                             .sort((a,b)=>a.name<b.name?1:-1);
   if(!files.length) throw new Error("no payload has been published yet");
+  /* ⭐ EVERY published week, newest first — newitem_plan.py builds candidates
+     PLAN_LEAD_DAYS=14 ahead, so several order Sundays genuinely exist to review
+     (Jack, 2026-09-05). ⛔ The chosen week wins over "newest": deciding against
+     the wrong week is invisible once submitted. */
+  WEEKS = files.map(f=>(f.name.match(/payload_(\d{4}-\d{2}-\d{2})/)||[])[1])
+               .filter(Boolean);
+  if(WANT_SUNDAY){
+    const hit=files.find(f=>f.name===`payload_${WANT_SUNDAY}.json`);
+    if(hit) files.unshift(hit);
+  }
   const t=await getToken();
   const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${files[0].id}/content`,
                       {headers:{Authorization:"Bearer "+t}});
@@ -2090,9 +2103,16 @@ let MAPDATA=null, MAPBUSY=false;
 async function loadMarketMap(){
   if(MAPDATA) return MAPDATA;
   const ls=await graph(`/sites/${CFG.siteId}/drive/root:/${CFG.payloadDir}:/children?$select=name,id`);
-  const f=(ls.value||[]).filter(x=>/^marketmap_.*\.json$/.test(x.name))
-                        .sort((a,b)=>a.name<b.name?1:-1)[0];
+  const maps=(ls.value||[]).filter(x=>/^marketmap_.*\.json$/.test(x.name))
+                           .sort((a,b)=>a.name<b.name?1:-1);
+  /* ⛔ THE MAP MUST MATCH THE WEEK ON SCREEN. Taking the newest would pair this
+     week's map with last week's rows once several weeks are loadable — every dot
+     would be plausible and wrong. */
+  const want=PAYLOAD&&PAYLOAD.meta?`marketmap_${PAYLOAD.meta.order_sunday}.json`:null;
+  const f=(want&&maps.find(x=>x.name===want))||maps[0];
   if(!f) throw new Error("no market map has been published yet");
+  if(want&&f.name!==want)
+    console.warn(`no market map for ${PAYLOAD.meta.order_sunday}; showing ${f.name}`);
   const t=await getToken();
   const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${f.id}/content`,
                       {headers:{Authorization:"Bearer "+t}});
@@ -2146,6 +2166,26 @@ const mapSeen=new IntersectionObserver(es=>{
 
 /* ⭐ observe whatever the current render produced. `render()` replaces #main
    wholesale, so re-scan after every render rather than binding once. */
+/* ⭐ SWITCHING WEEK RELOADS EVERYTHING — payload, decisions and the map cache —
+   because every one of them is keyed on the order Sunday. ⛔ A partial switch
+   would show this week's rows beside last week's decisions. */
+function paintWeeks(){
+  const sel=document.getElementById("week");
+  if(!sel||!WEEKS.length) return;
+  const cur=PAYLOAD&&PAYLOAD.meta?PAYLOAD.meta.order_sunday:WEEKS[0];
+  sel.innerHTML=WEEKS.map(w=>
+    `<option value="${w}"${w===cur?" selected":""}>order ${w}${
+      w===WEEKS[0]?" (newest)":""}</option>`).join("");
+  sel.onchange=async()=>{
+    WANT_SUNDAY=sel.value;
+    history.replaceState(null,"",`?sunday=${sel.value}`);
+    MAPDATA=null;                       // ⛔ the map is per week too
+    document.getElementById("main").innerHTML=
+      '<div class="center">loading order '+esc(sel.value)+'…</div>';
+    await boot();
+  };
+}
+
 function watchRowMaps(){
   document.querySelectorAll('.mapslot:not([data-watched])').forEach(d=>{
     d.dataset.watched='1'; mapSeen.observe(d);
@@ -2281,7 +2321,11 @@ document.getElementById("submit").addEventListener("click",async()=>{
 });
 
 /* ── boot ─────────────────────────────────────────────────────────────── */
-(async()=>{
+/* ⭐ A FUNCTION, not an inline IIFE, so switching order week can re-run the whole
+   load. ⛔ Payload, decisions and the map cache are ALL keyed on the order
+   Sunday — reloading only some of them would show one week's rows beside
+   another week's decisions. */
+async function boot(){
   const sub=document.getElementById("sub");
   try{
     if(!loadToken()){ if(!await completeLogin()){ await beginLogin(); return; } }
@@ -2293,6 +2337,7 @@ document.getElementById("submit").addEventListener("click",async()=>{
     const m=PAYLOAD.meta;
     sub.textContent=`order ${m.order_sunday} · ${ROWS.length} candidates · `
       +`${(m.carried_counts||{}).lapsed||0} bring-backs · signed in as ${account}`;
+    paintWeeks();
     render();
   }catch(e){
     document.getElementById("main").innerHTML=
@@ -2300,5 +2345,6 @@ document.getElementById("submit").addEventListener("click",async()=>{
        <button onclick="sessionStorage.clear();location.href=location.pathname">sign in again</button></div>`;
     sub.textContent="not signed in";
   }
-})();
+}
+boot();
 </script>
