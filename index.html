@@ -2145,6 +2145,10 @@ draw(); renderSel();
    opened. ⛔ Never on page load — the review list must stay fast, and most
    sessions never open the map. */
 let MAPDATA=null, MAPBUSY=false;
+/* ⭐ set when the map on screen belongs to a DIFFERENT order week than the
+   rows — the banner in renderMarketMap is the only place a reviewer can
+   learn that. ⛔ Cleared with MAPDATA on every week switch. */
+let MAPFROM=null;
 async function loadMarketMap(){
   if(MAPDATA) return MAPDATA;
   const ls=await graph(`/sites/${CFG.siteId}/drive/root:/${CFG.payloadDir}:/children?$select=name,id`);
@@ -2156,8 +2160,12 @@ async function loadMarketMap(){
   const want=PAYLOAD&&PAYLOAD.meta?`marketmap_${PAYLOAD.meta.order_sunday}.json`:null;
   const f=(want&&maps.find(x=>x.name===want))||maps[0];
   if(!f) throw new Error("no market map has been published yet");
-  if(want&&f.name!==want)
-    console.warn(`no market map for ${PAYLOAD.meta.order_sunday}; showing ${f.name}`);
+  /* ⛔⛔ SAY IT ON SCREEN, NOT IN THE CONSOLE. A map from another order week is
+     still useful context, but a reviewer who cannot tell is reading last week's
+     shelf as this week's — every dot plausible and wrong, which is the failure the
+     comment above already names. Nobody has the console open. */
+  MAPFROM = (want && f.name!==want)
+    ? ((/marketmap_(\d{4}-\d{2}-\d{2})/.exec(f.name)||[])[1] || f.name) : null;
   const t=await getToken();
   const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${f.id}/content`,
                       {headers:{Authorization:"Bearer "+t}});
@@ -2168,7 +2176,18 @@ async function renderMarketMap(el){
   if(MAPBUSY) return; MAPBUSY=true;
   el.innerHTML='<div class="center">Loading the market map… <span class="mut">'+
     '(about 22 MB, once per session)</span></div>';
-  try{ const d=await loadMarketMap(); el.innerHTML=''; initMarketMap(el,d); }
+  try{
+    const d=await loadMarketMap(); el.innerHTML='';
+    if(MAPFROM){
+      const b=document.createElement('div');
+      b.className='banner';
+      b.textContent=`⚠️ No market map has been published for order `
+        +`${(PAYLOAD.meta||{}).order_sunday} — this is the map from order ${MAPFROM}. `
+        +`Treat it as context, not as this week's shelf.`;
+      el.appendChild(b);
+    }
+    initMarketMap(el,d);
+  }
   catch(e){ el.innerHTML='<div class="center">⛔ '+esc(e.message)+'</div>'; }
   finally{ MAPBUSY=false; }
 }
@@ -2287,7 +2306,7 @@ async function switchWeek(key, opts){
     /* only now is anything committed */
     PAYLOAD=doc; ROWS=doc.rows||[]; DECIDED=decided; WEEK=key;
     WEEK_REASON=opts.reason||WEEK_REASON;
-    MAPDATA=null;                       // ⛔ the market map is per week too
+    MAPDATA=null; MAPFROM=null;          // ⛔ the market map is per week too
     for(const k of Object.keys(DECIDED)) DECIDED[k]._row=ROWS.find(r=>r.upc===k);
     /* ⛔ LAND ON "Recommended", NOT ON WHATEVER TAB THE LAST WEEK ENDED ON.
        Submitting leaves you on "Decided"; switching from there into a week with no
