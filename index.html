@@ -1173,10 +1173,41 @@ function rowHtml(r){
      <textarea placeholder="Note or question for Claude (optional)" data-n="${esc(r.upc)}">${esc(d.reviewer_note||"")}</textarea>
    </div></div>`;
 }
+/* ⭐⭐ AN ITEM APPROVED IN AN EARLIER WEEK IS OFF THE LIST (ruling: Jack,
+   2026-09-06 — *"did this item get approved before, don't display it again even
+   if it is in the current week I am looking at"*).
+   ⛔ APPROVALS ONLY, never declines. They are not the same judgement: a decline
+   can be right one week and wrong the next because the promo or the gap moved,
+   and the build deliberately SHOWS those with the reviewer's own reason
+   (`prior_decisions`). An approval is not a judgement waiting to be revisited —
+   it is an action already in flight: `newitem_drain.py` has queued a pre-order
+   line and the product is being created in Finale. Approving it a second time
+   queues a SECOND line (PM-648), and the clash only surfaces days later at the
+   Sunday build, to somebody who is not the reviewer who caused it.
+   ⛔ READ LIVE FROM `ALLDEC`, NOT from the payload's `prior_decisions` — that
+   snapshot was taken when the week was BUILT, so an approval saved an hour ago
+   in the other week would not be in it, and those are exactly the collisions
+   this exists to stop.
+   ⛔ HIDDEN IS NOT DELETED. They stay reachable under Decided, and the header
+   says how many were dropped and why — a row that vanishes with no trace is
+   indistinguishable from a row the build never produced. */
+function approvedElsewhere(){
+  const cur=String(WEEK||""), out={};
+  for(const [w,rows] of Object.entries(ALLDEC||{})){
+    if(!w||w===cur) continue;
+    for(const [upc,f] of Object.entries(rows||{}))
+      if(String(f.decision||"")==="approve") out[upc]=w;
+  }
+  return out;
+}
 function visible(){
-  if(TAB==="done") return ROWS.filter(r=>DECIDED[r.upc]);
-  if(TAB==="reco") return ROWS.filter(r=>!DECIDED[r.upc]&&!r.demoted&&r.score!==null).slice(0,60);
-  return ROWS.filter(r=>!DECIDED[r.upc]);
+  const prior=approvedElsewhere();
+  /* ⭐ Decided keeps showing them — this is where a reviewer looks for "what
+     happened to that item", so it is the one place hiding it would be wrong. */
+  if(TAB==="done") return ROWS.filter(r=>DECIDED[r.upc]||prior[r.upc]);
+  if(TAB==="reco") return ROWS.filter(r=>!DECIDED[r.upc]&&!prior[r.upc]
+                                         &&!r.demoted&&r.score!==null).slice(0,60);
+  return ROWS.filter(r=>!DECIDED[r.upc]&&!prior[r.upc]);
 }
 function render(){
   const m=document.getElementById("main");
@@ -1188,11 +1219,25 @@ function render(){
   const st=PAYLOAD.meta.spins_state||{};
   let head="";
   if(st.note) head+=`<div class="banner">${esc(st.note)}</div>`;
+  /* ⛔ NEVER HIDE ROWS SILENTLY. A list that quietly shrank is indistinguishable
+     from a build that produced fewer candidates, and the reviewer has no way to
+     ask which. Say the number, say why, and say where they went. */
+  const _pri=approvedElsewhere();
+  const _hid=ROWS.filter(r=>!DECIDED[r.upc]&&_pri[r.upc]).length;
+  if(_hid && TAB!=="done")
+    head+=`<div class="banner"><b>${_hid} item${_hid===1?"":"s"} hidden</b> —
+      already approved on an earlier order week, so approving again would queue a
+      second pre-order line. <span class="mut">They are listed under
+      <b>Decided</b>.</span></div>`;
   if(TAB==="done"){
     /* ⭐ WHAT YOU ACTUALLY COMMITTED. The count alone never showed the cash, and
        the cash is the thing worth checking before the drain turns it into an
        order. ⛔ Uses promo cost where there is one, because that is what we pay. */
     const dec=Object.entries(DECIDED).map(([u,d])=>({u,d,r:d._row||ROWS.find(x=>x.upc===u)||{}}));
+    /* ⭐ the earlier-week approvals shown here are NOT this week's decisions and
+       must not be counted into this week's committed cash. */
+    const _pd=approvedElsewhere();
+    const _other=ROWS.filter(r=>!DECIDED[r.upc]&&_pd[r.upc]).length;
     const ap=dec.filter(x=>x.d.decision==="approve");
     const units=ap.reduce((n,x)=>n+(Number(x.d.approved_qty)||0),0);
     const cash=ap.reduce((n,x)=>n+((Number(x.d.approved_qty)||0)*
@@ -1202,7 +1247,10 @@ function render(){
       &middot; <b>${money(cash)}</b> committed at cost
       &middot; ${by("decline")} declined &middot; ${by("defer")} deferred
       &middot; ${by("question")} question(s).
-      <span class="mut">Nothing is ordered until the drain runs.</span></div>`;
+      <span class="mut">Nothing is ordered until the drain runs.</span>
+      ${_other?`<br><b>${_other}</b> further item${_other===1?" was":"s were"}
+        approved on an earlier week and are shown below — they are NOT counted
+        above and need no decision here.`:""}</div>`;
   }
   if(TAB==="all") head+=`<div class="banner">Every promo item we do not carry, ranked. Below the
      recommended set these are shown for completeness — the order is the same score.</div>`;
