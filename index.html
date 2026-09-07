@@ -26,6 +26,9 @@ header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px
        padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 h1{font-size:16px;margin:0;font-weight:650}
 .sub{color:var(--mut);font-size:12px}
+/* which order week is on screen — and, in amber, when it is NOT the newest one */
+.weeknote{color:var(--mut);font-size:12px;margin-top:2px}
+.weeknote.stale{color:#a1620a;font-weight:600}
 .sub.acv{font-size:11px;font-weight:600;margin-top:1px}
 .sub.acv.ok{color:#0d6b3f}
 .sub.acv.warn{color:#a1620a}
@@ -230,7 +233,8 @@ details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-
 </style>
 
 <header>
-  <div><h1>New items to review</h1><div class="sub" id="sub">signing in…</div></div>
+  <div><h1>New items to review</h1><div class="sub" id="sub">signing in…</div>
+       <div class="weeknote" id="weeknote"></div></div>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="reco" aria-selected="true">Recommended</button>
     <button class="tab" role="tab" data-tab="all" aria-selected="false">Everything on promo</button>
@@ -267,8 +271,21 @@ const GRAPH="https://graph.microsoft.com/v1.0";
 const store=sessionStorage;
 let token=null,tokenExp=0,refreshTok=null,account="";
 let PAYLOAD=null, ROWS=[], DECIDED={}, LISTID=null, TAB="reco";
-/* ⭐ which order week we are deciding, and every week available to switch to */
-let WEEKS=[], WANT_SUNDAY=(new URLSearchParams(location.search)).get("sunday")||null;
+/* ⭐ which order week we are deciding, and every week available to switch to.
+   WEEK is the week actually loaded; WEEKS is [{key,name,id}] newest first;
+   ALLDEC is every saved decision grouped by order Sunday. */
+let WEEKS=[], WEEK=null, ALLDEC={}, SWITCHING=false, WEEK_REASON="";
+let WANT_SUNDAY=(new URLSearchParams(location.search)).get("sunday")||null;
+/* ⛔ sessionStorage, not the query string: signing in redirects through Entra and
+   `completeLogin` strips the query, so a URL-only memory is lost at exactly the
+   moment the reviewer comes back. */
+const WEEK_MEM="newitem_week_choice";
+/* ⛔⛔ THE DEEP LINK MUST SURVIVE THE SIGN-IN. `beginLogin` redirects to
+   `location.origin + location.pathname` — the query string is DROPPED, and Entra
+   comes back with `?code=…` instead. So a Teams card linking to a specific order
+   week would land the reviewer on a different week with nothing to say so. Stash
+   it the instant the page parses, before any redirect can happen. */
+if(WANT_SUNDAY){ try{ sessionStorage.setItem(WEEK_MEM,WANT_SUNDAY); }catch(_){} }
 
 /* ── auth: authorization code + PKCE (same shape as the receiving page) ── */
 const rand=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);
@@ -343,28 +360,39 @@ function flat(v,max){
 }
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-async function loadPayload(){
-  /* newest payload in the folder — ⛔ never a hardcoded date, so the page shows
-     whatever the latest build published rather than silently going stale. */
-  const ls=await graph(`/sites/${CFG.siteId}/drive/root:/${CFG.payloadDir}:/children?$select=name,id`);
-  const files=(ls.value||[]).filter(f=>/^payload_.*\.json$/.test(f.name))
-                            .sort((a,b)=>a.name<b.name?1:-1);
-  if(!files.length) throw new Error("no payload has been published yet");
-  /* ⭐ EVERY published week, newest first — newitem_plan.py builds candidates
-     PLAN_LEAD_DAYS=14 ahead, so several order Sundays genuinely exist to review
-     (Jack, 2026-09-05). ⛔ The chosen week wins over "newest": deciding against
-     the wrong week is invisible once submitted. */
-  WEEKS = files.map(f=>(f.name.match(/payload_(\d{4}-\d{2}-\d{2})/)||[])[1])
-               .filter(Boolean);
-  if(WANT_SUNDAY){
-    const hit=files.find(f=>f.name===`payload_${WANT_SUNDAY}.json`);
-    if(hit) files.unshift(hit);
-  }
+/* ⭐ EVERY published week, newest first — newitem_week.py builds several order
+   Sundays ahead (PLAN_LEAD_DAYS=14), so more than one genuinely exists to review
+   (Jack, 2026-09-05/06). -> [{key,name,id}] */
+async function listWeeks(){
+  const ls=await graph(`/sites/${CFG.siteId}/drive/root:/${CFG.payloadDir}:/children?$select=name,id&$top=200`);
+  return (ls.value||[])
+    .map(f=>({f, m:/^payload_(\d{4}-\d{2}-\d{2})\.json$/.exec(f.name)}))
+    .filter(x=>x.m)
+    .map(x=>({key:x.m[1], name:x.f.name, id:x.f.id}))
+    .sort((a,b)=>a.key<b.key?1:-1);
+}
+/* ⛔⛔ IT TAKES THE WEEK IT IS ASKED FOR AND REFUSES ANYTHING ELSE. The old
+   version fell back to `files[0]` whenever the requested week was missing, so a
+   reviewer who asked for one order Sunday could be shown a different one with no
+   error at all — and a decision recorded against the wrong week is invisible once
+   submitted. The choice is made ONCE, in pickWeek(); every caller passes it.
+   (The same rule purchasing/_app.js states on loadOrder.) */
+async function loadPayload(w){
+  if(!w) throw new Error("no payload has been published yet");
   const t=await getToken();
-  const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${files[0].id}/content`,
+  const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/items/${w.id}/content`,
                       {headers:{Authorization:"Bearer "+t}});
-  if(!r.ok) throw new Error("payload download failed "+r.status);
-  return await r.json();
+  if(!r.ok) throw new Error(`payload download failed ${r.status} for ${w.name}`);
+  const doc=await r.json();
+  /* ⛔ THE FILE MUST BE THE WEEK IT CLAIMS TO BE. Every decision is stamped with
+     `meta.order_sunday`, and `newitem_drain.py` filters on it — so if the payload's
+     own declared week disagrees with the filename, one of the two is a lie and we
+     do not get to guess which. Refuse rather than record against the wrong week. */
+  const decl=((doc||{}).meta||{}).order_sunday;
+  if(decl && String(decl)!==w.key)
+    throw new Error(`⛔ ${w.name} declares order_sunday ${decl} — the file is not `
+      +`the week it claims to be. Rebuild it; nothing is safe to decide here.`);
+  return doc;
 }
 async function listId(){
   if(LISTID) return LISTID;
@@ -373,19 +401,36 @@ async function listId(){
   if(!l) throw new Error(`list ${CFG.listName} not found`);
   return (LISTID=l.id);
 }
-async function loadDecisions(sunday){
+/* ⭐⭐ EVERY WEEK'S DECISIONS, GROUPED BY `order_sunday` — one read, not one per
+   week, so the switcher can say how much work each week already holds.
+   ⛔ That field is the ONLY thing separating one week's decisions from another's:
+   the save path writes it plus a `Title` of `<sunday>:<upc>`, and
+   `newitem_drain.py` filters on it. A row with no `order_sunday` belongs to no
+   week and is SKIPPED rather than leaking into the week on screen. */
+async function loadAllDecisions(){
   const id=await listId();
   let url=`/sites/${CFG.siteId}/lists/${id}/items?expand=fields&$top=500`, out={};
   while(url){
     const j=await graph(url);
     for(const it of j.value||[]){
       const f=it.fields||{};
-      if(f.order_sunday===sunday) out[f.upc]={...f,_id:it.id};
+      const w=f.order_sunday==null?"":String(f.order_sunday);
+      if(!w||!f.upc) continue;
+      (out[w]=out[w]||{})[f.upc]={...f,_id:it.id};
     }
     const n=j["@odata.nextLink"]; url=n?n.replace(GRAPH,""):null;
   }
   return out;
 }
+/* ⛔ A COPY PER WEEK. `DECIDED` is mutated in place (`_dirty`, `approved_qty`,
+   `_row`); handing out the stored object would let a discarded edit on week A
+   survive in ALLDEC and reappear the next time A is opened. */
+function decisionsFor(sunday){
+  const src=ALLDEC[String(sunday)]||{}, out={};
+  for(const [upc,f] of Object.entries(src)) out[upc]={...f};
+  return out;
+}
+const savedCount=k=>Object.keys(ALLDEC[String(k)]||{}).length;
 
 
 /* ── ⭐ SUMMARISE, DO NOT DUMP (Jack, 2026-09-04: "it's just kind of a bunch of
@@ -2169,22 +2214,140 @@ const mapSeen=new IntersectionObserver(es=>{
 /* ⭐ SWITCHING WEEK RELOADS EVERYTHING — payload, decisions and the map cache —
    because every one of them is keyed on the order Sunday. ⛔ A partial switch
    would show this week's rows beside last week's decisions. */
+/* ⭐ WHICH WEEK DO WE OPEN? ⛔ NOT simply "the newest". A publish must never move
+   someone mid-review, so a week that already holds decisions outranks a week that
+   holds none, however new. An explicit choice made in this browser session
+   outranks both — being returned to another week by a reload (or by the Entra
+   sign-in round trip) is the same failure wearing a different hat. */
+function pickWeek(){
+  if(WANT_SUNDAY&&WEEKS.some(w=>w.key===WANT_SUNDAY))
+    return {key:WANT_SUNDAY, reason:"the week named in the link you followed"};
+  let mem=null; try{ mem=sessionStorage.getItem(WEEK_MEM); }catch(_){}
+  if(mem&&WEEKS.some(w=>w.key===mem))
+    return {key:mem, reason:"the week you chose earlier in this session"};
+  const withWork=WEEKS.filter(w=>savedCount(w.key)>0);
+  if(withWork.length)
+    return {key:withWork[0].key, reason:"the newest week that already has saved decisions"};
+  return {key:WEEKS[0].key, reason:"the newest published week — none has decisions yet"};
+}
+/* ⛔ Repainted only when the week set, the selection or the decision counts move —
+   never from render(). Repainting a <select> the reviewer has open closes it. */
 function paintWeeks(){
   const sel=document.getElementById("week");
   if(!sel||!WEEKS.length) return;
-  const cur=PAYLOAD&&PAYLOAD.meta?PAYLOAD.meta.order_sunday:WEEKS[0];
-  sel.innerHTML=WEEKS.map(w=>
-    `<option value="${w}"${w===cur?" selected":""}>order ${w}${
-      w===WEEKS[0]?" (newest)":""}</option>`).join("");
-  sel.onchange=async()=>{
-    WANT_SUNDAY=sel.value;
-    history.replaceState(null,"",`?sunday=${sel.value}`);
-    MAPDATA=null;                       // ⛔ the map is per week too
-    document.getElementById("main").innerHTML=
-      '<div class="center">loading order '+esc(sel.value)+'…</div>';
-    await boot();
-  };
+  sel.innerHTML=WEEKS.map((w,i)=>{
+    const n=savedCount(w.key);
+    return `<option value="${esc(w.key)}">order ${esc(w.key)}`
+      +(i===0?" · newest":"")
+      +` — ${n?`${n} decision${n===1?"":"s"} saved`:"no decisions yet"}</option>`;
+  }).join("");
+  if(WEEK!=null) sel.value=WEEK;
+  /* ⛔ The heading takes the week from `PAYLOAD.meta.order_sunday` — the value the
+     save path stamps on every row — never from the filename. And it says out loud
+     when a NEWER week exists, because "I reviewed the wrong week" is a silent
+     failure otherwise. */
+  const note=document.getElementById("weeknote");
+  if(note){
+    const stale=!!(WEEKS.length&&WEEK!=null&&WEEKS[0].key!==WEEK);
+    note.className=stale?"weeknote stale":"weeknote";
+    note.innerHTML=stale
+      ? `⚠️ a newer order week (<b>${esc(WEEKS[0].key)}</b>) is published — you are `
+        +`NOT deciding it. ${esc(WEEK_REASON)}.`
+      : (WEEKS.length>1
+          ? `${WEEKS.length} weeks published · ${esc(WEEK_REASON)}. Each week saves `
+            +`separately.`
+          : `${esc(WEEK_REASON)}.`);
+  }
 }
+/* ⭐ Would pressing Submit change what the store holds? ⛔ `Object.keys(DECIDED)`
+   is NOT the answer — DECIDED is seeded from SharePoint on every load, so a
+   reviewer who saved 40 rows and reloaded has 40 entries with nothing pending, and
+   a warning that always fires is a warning nobody reads. `_dirty` is set only by an
+   actual edit and cleared by a successful save, and it is the same test the Submit
+   button already uses to enable itself — so the two can never disagree. */
+const unsavedUpcs=()=>Object.entries(DECIDED).filter(([,d])=>d._dirty).map(([u])=>u);
+
+/* ⛔⛔ NOTHING IS COMMITTED UNTIL BOTH READS SUCCEED. Clearing the state first and
+   loading after would leave week A's rows on screen under week B's heading — the
+   "deciding A while believing it is B" state this whole feature exists to prevent.
+   ⭐ Payload, decisions and the map cache are ALL keyed on the order Sunday, so a
+   switch reloads every one of them. */
+async function switchWeek(key, opts){
+  opts=opts||{};
+  const w=WEEKS.find(x=>x.key===key);
+  if(!w) throw new Error(`no payload has been published for ${key}`);
+  const sel=document.getElementById("week"), st=document.getElementById("status");
+  SWITCHING=true; if(sel) sel.disabled=true;
+  if(st) st.textContent=`loading order ${key}…`;
+  try{
+    const doc=await loadPayload(w);
+    const sunday=((doc.meta||{}).order_sunday)||key;
+    if(!opts.cached) ALLDEC=await loadAllDecisions();
+    const decided=decisionsFor(sunday);
+    /* only now is anything committed */
+    PAYLOAD=doc; ROWS=doc.rows||[]; DECIDED=decided; WEEK=key;
+    WEEK_REASON=opts.reason||WEEK_REASON;
+    MAPDATA=null;                       // ⛔ the market map is per week too
+    for(const k of Object.keys(DECIDED)) DECIDED[k]._row=ROWS.find(r=>r.upc===k);
+    /* ⛔ LAND ON "Recommended", NOT ON WHATEVER TAB THE LAST WEEK ENDED ON.
+       Submitting leaves you on "Decided"; switching from there into a week with no
+       decisions yet shows an EMPTY list, which reads as "this week has nothing"
+       rather than "you are looking at the wrong tab". */
+    if(TAB!=="reco"){
+      TAB="reco";
+      document.querySelectorAll(".tab").forEach(x=>
+        x.setAttribute("aria-selected", String(x.dataset.tab==="reco")));
+    }
+    try{ sessionStorage.setItem(WEEK_MEM,key); }catch(_){}
+    try{ history.replaceState(null,"",`${location.pathname}?sunday=${key}`); }catch(_){}
+    WANT_SUNDAY=key;
+    const m=PAYLOAD.meta||{};
+    document.getElementById("sub").textContent=
+      `order ${m.order_sunday} · ${ROWS.length} candidates · `
+      +`${(m.carried_counts||{}).lapsed||0} bring-backs · signed in as ${account}`;
+    paintWeeks(); tally(); render();
+    if(st) st.textContent=opts.boot?""
+      :`now reviewing order ${m.order_sunday} · ${savedCount(sunday)} decision(s) already saved`;
+  } finally {
+    SWITCHING=false;
+    const s2=document.getElementById("week"); if(s2) s2.disabled=false;
+  }
+}
+/* ⛔ Wired ONCE, outside every repaint. */
+(function wireWeek(){
+  const sel=document.getElementById("week");
+  if(!sel) return;
+  sel.onchange=async()=>{
+    const want=sel.value;
+    if(SWITCHING||want==null||want===WEEK){ if(WEEK!=null) sel.value=WEEK; return; }
+    const u=unsavedUpcs();
+    /* ⛔⛔ LOSING A REVIEWER'S UNSAVED DECISIONS IS THE WORST OUTCOME ON THIS PAGE.
+       Nothing is written until Submit, so a switch discards it — say so in those
+       words, name both weeks and the count, and default to NOT switching. */
+    if(u.length && !confirm(
+        `⛔ ${u.length} decision(s) on order ${WEEK} have NOT been submitted.\n\n`
+        +`Nothing on this page is kept until you press "Submit decisions", so `
+        +`opening order ${want} DISCARDS them.\n\nDiscard ${u.length} and open `
+        +`order ${want}?`)){
+      sel.value=WEEK; return;            // ⛔ never show a week we are not on
+    }
+    document.getElementById("main").innerHTML=
+      '<div class="center">loading order '+esc(want)+'…</div>';
+    try{ await switchWeek(want,{reason:"you chose this week by hand"}); }
+    catch(e){
+      if(WEEK!=null) sel.value=WEEK;
+      document.getElementById("status").textContent=
+        `⛔ could not open order ${want}: ${e.message} — still on order ${WEEK}`;
+      render();
+    }
+  };
+})();
+/* ⛔ The other way unsaved decisions disappear: a reload or a closed tab. Same
+   test, so it cannot fire on a page whose edits are all already in SharePoint. */
+window.addEventListener("beforeunload",e=>{
+  if(!unsavedUpcs().length) return;
+  e.preventDefault(); e.returnValue="";
+});
 
 function watchRowMaps(){
   document.querySelectorAll('.mapslot:not([data-watched])').forEach(d=>{
@@ -2306,7 +2469,17 @@ document.getElementById("submit").addEventListener("click",async()=>{
     }catch(err){ fail++; console.error(upc,err); }
   }
   s.textContent = fail?`⛔ ${ok} saved, ${fail} FAILED — see the console and retry`
-                      :`✓ ${ok} decision(s) saved`;
+                      :`✓ ${ok} decision(s) saved against order ${PAYLOAD.meta.order_sunday}`;
+  /* ⭐ THE STORE MOVED, SO THE SWITCHER MUST TOO. Its per-week counts are the
+     reviewer's only sight of how much work each week holds; leaving them at the
+     figures read at boot makes a week just finished still read "no decisions yet".
+     ⛔ Only rows that actually saved (`_dirty` cleared) are folded in. */
+  {
+    const wk=String(PAYLOAD.meta.order_sunday), bucket=ALLDEC[wk]=ALLDEC[wk]||{};
+    for(const [upc,d] of Object.entries(DECIDED))
+      if(d._id&&!d._dirty) bucket[upc]={...d,_row:undefined};
+    paintWeeks();
+  }
   /* ⭐ LAND ON WHAT YOU JUST DID (Jack, 2026-09-05). Submitting used to drop every
      decided row out of the Recommended list and leave a bare count — 58 rows
      vanishing at the exact moment you want to check what you committed.
@@ -2330,15 +2503,15 @@ async function boot(){
   try{
     if(!loadToken()){ if(!await completeLogin()){ await beginLogin(); return; } }
     sub.textContent="loading the week…";
-    PAYLOAD=await loadPayload();
-    ROWS=PAYLOAD.rows||[];
-    DECIDED=await loadDecisions(PAYLOAD.meta.order_sunday);
-    for(const k of Object.keys(DECIDED)) DECIDED[k]._row=ROWS.find(r=>r.upc===k);
-    const m=PAYLOAD.meta;
-    sub.textContent=`order ${m.order_sunday} · ${ROWS.length} candidates · `
-      +`${(m.carried_counts||{}).lapsed||0} bring-backs · signed in as ${account}`;
+    WEEKS=await listWeeks();
+    if(!WEEKS.length)
+      throw new Error("no payload has been published yet — run newitem_week.py");
+    /* ⛔ The decisions are read BEFORE the week is chosen, because "which week
+       already has work in it" is part of choosing. */
+    ALLDEC=await loadAllDecisions();
+    const p=pickWeek();
     paintWeeks();
-    render();
+    await switchWeek(p.key,{reason:p.reason, cached:true, boot:true});
   }catch(e){
     document.getElementById("main").innerHTML=
       `<div class="center">⛔ ${esc(e.message)}<br><br>
