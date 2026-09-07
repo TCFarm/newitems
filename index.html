@@ -2266,7 +2266,10 @@ function paintWeeks(){
      when a NEWER week exists, because "I reviewed the wrong week" is a silent
      failure otherwise. */
   const note=document.getElementById("weeknote");
-  if(note){
+  /* ⛔ Nothing to say until a week is actually loaded — boot paints the <select>
+     first so switchWeek has something to set, and a note written then would read
+     "3 weeks published · ." with an empty reason. */
+  if(note&&WEEK!=null){
     const stale=!!(WEEKS.length&&WEEK!=null&&WEEKS[0].key!==WEEK);
     note.className=stale?"weeknote stale":"weeknote";
     note.innerHTML=stale
