@@ -1109,9 +1109,10 @@ function rowHtml(r){
               aria-label="quantity, orderable in ${oi.inc}s"
               title="${oi.known?`orders in multiples of ${oi.inc}`:"increment unknown — verify before sending"}"
               value="${esc(qty)}" data-q="${esc(r.upc)}" data-inc="${oi.inc}">
-       ${["approve","decline"].map(x=>
-         `<button class="mini ${d.decision===x?"on":""}" data-d="${x}" data-u="${esc(r.upc)}"
-                  aria-pressed="${d.decision===x}" title="${x}">${x==="approve"?"✓":"✕"}</button>`).join("")}
+       ${["approve","decline"].map(x=>{
+         const sel = x==="decline" ? isDecline(d.decision) : d.decision===x;
+         return `<button class="mini ${sel?"on":""}" data-d="${x}" data-u="${esc(r.upc)}"
+                  aria-pressed="${sel}" title="${x}">${x==="approve"?"✓":"✕"}</button>`;}).join("")}
        <button class="mini ${d.decision==="question"?"on":""}" data-d="question" data-u="${esc(r.upc)}"
                aria-pressed="${d.decision==="question"}" title="ask a question">?</button>
        <span class="snz" data-snz="${esc(r.upc)}" ${isDecline(d.decision)?"":"hidden"}
@@ -1375,7 +1376,16 @@ document.addEventListener("click",e=>{
     // "approved" in one and nothing in the other.
     const rowEl=b.closest(".row");
     rowEl.querySelectorAll("button[data-d]").forEach(x=>{
-      const on = x.dataset.d===b.dataset.d;
+      /* the plain decline button and the "4 weeks" snooze chip SHARE
+         data-d="decline", so an exact match cannot serve both: picking
+         "3 months" set decision=decline_3m and switched the tick OFF, so a
+         row that WAS declined read as undecided (Jack, 2026-09-08).
+         the chips are an exact choice of duration; the tick means "declined
+         at all" and stays lit for every decline_* variant. */
+      const on = x.classList.contains("snzb")
+        ? x.dataset.d===b.dataset.d
+        : (x.dataset.d==="decline" ? isDecline(b.dataset.d)
+                                   : x.dataset.d===b.dataset.d);
       x.classList.toggle("on",on); x.setAttribute("aria-pressed",on);
     });
     rowEl.classList.add("decided");
