@@ -72,6 +72,11 @@ button.mini.on[data-d=question]{background:var(--warn);color:#fff;border-color:v
    selected one takes the decline colour so the row still says "declined". */
 .snz{display:inline-flex;gap:3px;margin-left:6px;padding-left:6px;
   border-left:1px solid var(--line)}
+/* ⛔⛔ `display:inline-flex` OUTRANKS the browser's own `[hidden]{display:none}`,
+   so the strip would render on every row regardless of the attribute. Exactly the
+   bug that made the purchasing app's modal ignore `[hidden]` (`.modal{display:flex}`
+   beat it). ⭐ Same specificity plus !important, so `hidden` is authoritative. */
+.snz[hidden]{display:none!important}
 button.mini.snzb{font-size:10.5px;padding:2px 6px;opacity:.75}
 button.mini.snzb.on{opacity:1;background:var(--no);color:#fff;border-color:var(--no)}
 .row.decided{background:#fbfdfb}
@@ -1109,10 +1114,11 @@ function rowHtml(r){
                   aria-pressed="${d.decision===x}" title="${x}">${x==="approve"?"✓":"✕"}</button>`).join("")}
        <button class="mini ${d.decision==="question"?"on":""}" data-d="question" data-u="${esc(r.upc)}"
                aria-pressed="${d.decision==="question"}" title="ask a question">?</button>
-       ${isDecline(d.decision)?`<span class="snz" title="how long to keep it off the list">
+       <span class="snz" data-snz="${esc(r.upc)}" ${isDecline(d.decision)?"":"hidden"}
+             title="how long to keep it off the list">
          ${SNOOZE.map(([v,lbl])=>`<button class="mini snzb ${d.decision===v?"on":""}"
             data-d="${v}" data-u="${esc(r.upc)}" aria-pressed="${d.decision===v}"
-            title="hide for ${lbl}">${lbl}</button>`).join("")}</span>`:""}
+            title="hide for ${lbl}">${lbl}</button>`).join("")}</span>
      </div>
    </div>
    <div class="body">
@@ -1354,17 +1360,23 @@ document.addEventListener("click",e=>{
       x.classList.toggle("on",on); x.setAttribute("aria-pressed",on);
     });
     rowEl.classList.add("decided");
-    /* ⛔ THE STRIP IS CONDITIONAL MARKUP, so toggling `.on` classes cannot make it
-       exist. Clicking ✕ on an undecided row has to REPAINT that row, or the
-       durations only appear after an unrelated re-render — which reads as the
-       option not being there at all. ⭐ Repaint just this row, never the list:
-       a full render would destroy the quantity input the buyer may be mid-edit. */
-    if(isDecline(b.dataset.d)!==isDecline(cur.decision)){
-      const fresh=document.createElement("div");
-      fresh.innerHTML=rowHtml(row);
-      const nw=fresh.firstElementChild;
-      if(nw){ rowEl.replaceWith(nw); }
-    }
+    /* ⛔⛔ THE SNOOZE STRIP IS TOGGLED, NEVER RE-CREATED. The first version of
+       this rendered the strip only on a declined row and then had to REPLACE the
+       whole row element to make it appear (`innerHTML` into a scratch div, then
+       `replaceWith`). Two things were wrong with that:
+         1. it destroyed and rebuilt the row's quantity input and note textarea,
+            losing keyboard focus mid-edit — the same class of defect as the Safari
+            crash on the purchasing app, which was a live input destroyed during
+            its own event;
+         2. ⛔ IT COULD NOT BE TESTED. The suite's stub DOM has no `replaceWith`,
+            no `firstElementChild` and an `innerHTML` that does not parse HTML, so
+            the path never ran in any check — I had written it and asserted only
+            the MARKUP, which is not the same thing. Jack asked whether it was
+            actually fixed; it was not verified, so it was not fixed.
+       ⭐ Now the strip is always in the DOM and this flips one attribute, which
+       the stub CAN exercise — see the `hidden` assertions in the suite. */
+    const snz=rowEl.querySelector(`[data-snz="${CSS.escape(u)}"]`);
+    if(snz) snz.hidden = !isDecline(b.dataset.d);
     tally();
   }
 }, true);
