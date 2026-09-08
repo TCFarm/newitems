@@ -1346,6 +1346,25 @@ document.addEventListener("click",e=>{
     e.stopPropagation();
     const u=b.dataset.u, row=ROWS.find(r=>r.upc===u);
     const cur=DECIDED[u]||{};
+    /* ⛔⛔ APPROVING SOMETHING THAT ALREADY HAS A PENDING ORDER QUEUES A SECOND
+       LINE (ruling: Jack, 2026-09-08 — *"yeah I think warn the user that the item
+       has a pending order"*). His read of when it happens is exactly right: only
+       if two weeks are reviewed back-to-back BEFORE the first order goes out.
+       ⭐ Such rows are normally HIDDEN — `approvedElsewhere()` drops them from
+       both working tabs, and the BUILD drops them too — so the only way to reach
+       one is deliberately, from the Decided tab. That is precisely where a
+       confirmation belongs rather than a silent second approval.
+       ⛔ It ASKS, and defaults to not doing it: `apply_preorders` refuses to sum
+       two lines and alerts, but that alert lands days later at the Sunday build,
+       in front of somebody who is not the person who caused it. */
+    if(b.dataset.d==="approve"){
+      const other=approvedElsewhere()[u];
+      if(other && !confirm(
+          `⛔ This item was already APPROVED on the ${other} order week.\n\n`+
+          `A pre-order line is already queued for it. Approving again queues a `+
+          `SECOND line, and the clash only surfaces at the Sunday build.\n\n`+
+          `Approve it again anyway?`)) return;
+    }
     const qEl=document.querySelector(`input[data-q="${CSS.escape(u)}"]`);
     const nEl=document.querySelector(`textarea[data-n="${CSS.escape(u)}"]`);
     DECIDED[u]={...cur,decision:b.dataset.d,
