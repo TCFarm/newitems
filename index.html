@@ -67,6 +67,13 @@ button.mini{width:38px;height:38px;padding:0;font-size:16px;line-height:1;border
 button.mini.on[data-d=approve]{background:var(--ok);color:#fff;border-color:var(--ok)}
 button.mini.on[data-d=decline]{background:var(--no);color:#fff;border-color:var(--no)}
 button.mini.on[data-d=question]{background:var(--warn);color:#fff;border-color:var(--warn)}
+/* ⭐ The snooze strip only exists once a row is declined, so it must read as a
+   follow-up question rather than a fourth decision. Smaller, muted, and the
+   selected one takes the decline colour so the row still says "declined". */
+.snz{display:inline-flex;gap:3px;margin-left:6px;padding-left:6px;
+  border-left:1px solid var(--line)}
+button.mini.snzb{font-size:10.5px;padding:2px 6px;opacity:.75}
+button.mini.snzb.on{opacity:1;background:var(--no);color:#fff;border-color:var(--no)}
 .row.decided{background:#fbfdfb}
 @media (max-width:640px){
   .head{flex-wrap:wrap}
@@ -271,6 +278,21 @@ const GRAPH="https://graph.microsoft.com/v1.0";
 const store=sessionStorage;
 let token=null,tokenExp=0,refreshTok=null,account="";
 let PAYLOAD=null, ROWS=[], DECIDED={}, LISTID=null, TAB="reco";
+/* ⭐⭐ A DECLINE IS TIME-BOXED (ruling: Jack, 2026-09-07: *"if we reject an item
+   ... by default if we just click the 'X' deny button that SKU is excluded from
+   the future assessments for 4 weeks, but have an option to not show for 3 months
+   or 6 months"*).
+   ⛔⛔ THE DURATION RIDES IN THE `decision` VALUE, and it has to: the
+   `NewItemReview` SharePoint list defines no snooze column, and the save path
+   sends fields straight to Graph — an unknown field is a bare HTTP 400 that loses
+   THE WHOLE ROW. That is what destroyed a day of saved decisions on 2026-09-06.
+   ⭐ MUST STAY IN STEP WITH `lib/review_list.SNOOZE_DAYS`, which is what the build
+   reads. If these two disagree, the page promises a window the build does not
+   honour — and nothing would error. */
+const SNOOZE=[["decline","4 weeks",28],["decline_3m","3 months",91],
+              ["decline_6m","6 months",182]];
+const isDecline=d=>String(d||"").startsWith("decline");
+const snoozeLabel=d=>(SNOOZE.find(x=>x[0]===d)||SNOOZE[0])[1];
 /* ⭐ which order week we are deciding, and every week available to switch to.
    WEEK is the week actually loaded; WEEKS is [{key,name,id}] newest first;
    ALLDEC is every saved decision grouped by order Sunday. */
@@ -1087,6 +1109,10 @@ function rowHtml(r){
                   aria-pressed="${d.decision===x}" title="${x}">${x==="approve"?"✓":"✕"}</button>`).join("")}
        <button class="mini ${d.decision==="question"?"on":""}" data-d="question" data-u="${esc(r.upc)}"
                aria-pressed="${d.decision==="question"}" title="ask a question">?</button>
+       ${isDecline(d.decision)?`<span class="snz" title="how long to keep it off the list">
+         ${SNOOZE.map(([v,lbl])=>`<button class="mini snzb ${d.decision===v?"on":""}"
+            data-d="${v}" data-u="${esc(r.upc)}" aria-pressed="${d.decision===v}"
+            title="hide for ${lbl}">${lbl}</button>`).join("")}</span>`:""}
      </div>
    </div>
    <div class="body">
@@ -1328,6 +1354,17 @@ document.addEventListener("click",e=>{
       x.classList.toggle("on",on); x.setAttribute("aria-pressed",on);
     });
     rowEl.classList.add("decided");
+    /* ⛔ THE STRIP IS CONDITIONAL MARKUP, so toggling `.on` classes cannot make it
+       exist. Clicking ✕ on an undecided row has to REPAINT that row, or the
+       durations only appear after an unrelated re-render — which reads as the
+       option not being there at all. ⭐ Repaint just this row, never the list:
+       a full render would destroy the quantity input the buyer may be mid-edit. */
+    if(isDecline(b.dataset.d)!==isDecline(cur.decision)){
+      const fresh=document.createElement("div");
+      fresh.innerHTML=rowHtml(row);
+      const nw=fresh.firstElementChild;
+      if(nw){ rowEl.replaceWith(nw); }
+    }
     tally();
   }
 }, true);
