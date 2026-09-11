@@ -2364,16 +2364,52 @@ const mapSeen=new IntersectionObserver(es=>{
    holds none, however new. An explicit choice made in this browser session
    outranks both — being returned to another week by a reload (or by the Entra
    sign-in round trip) is the same failure wearing a different hat. */
+/* ⭐ Today as YYYY-MM-DD in LOCAL time. ⛔ NOT toISOString().slice(0,10) — that is
+   UTC, so from 19:00 CT onwards it reads as tomorrow and would call the week we
+   are still deciding "past". */
+function todayKey(){
+  const d=new Date(), p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+/* ⛔ An order Sunday that has already gone by. Its purchase opportunity is over,
+   so it is never the right week to OPEN — though it stays selectable by hand,
+   because "what did we decide back then" is a real question. */
+function weekIsPast(key){ return key < todayKey(); }
+
+/* ⛔⛔ DEFAULT TO THE NEXT ORDER SUNDAY, NOT THE NEWEST WEEK AND NOT THE ONE WITH
+   WORK IN IT (fixed 2026-09-11, Jack: *"can you get the new item app to default
+   to the next date? now it defaults to 9-6, a date that has passed"*).
+
+   The old rule preferred "the newest week that already has saved decisions".
+   That was right when one week was published at a time: the week with work in it
+   WAS the live week. ⛔ Since `newitem-week-monday` began publishing TWO weeks
+   every Monday — the DECIDE week and a LOOK-AHEAD — it became wrong in the worst
+   way: 2026-09-06 was the only week anyone had decided, so the page opened a week
+   whose order Sunday had passed and whose purchase opportunity was gone, while
+   09-13 sat undecided.
+
+   ⭐ The order now is: an explicit link > what you chose this session > the
+   EARLIEST week still ahead of us (the one being decided) > the earliest week
+   ahead that has work > everything is in the past, so the newest.
+   ⛔ "Earliest ahead", not "newest": with two weeks live the imminent one is the
+   decision and the further one is context. */
 function pickWeek(){
   if(WANT_SUNDAY&&WEEKS.some(w=>w.key===WANT_SUNDAY))
     return {key:WANT_SUNDAY, reason:"the week named in the link you followed"};
   let mem=null; try{ mem=sessionStorage.getItem(WEEK_MEM); }catch(_){}
   if(mem&&WEEKS.some(w=>w.key===mem))
     return {key:mem, reason:"the week you chose earlier in this session"};
-  const withWork=WEEKS.filter(w=>savedCount(w.key)>0);
-  if(withWork.length)
-    return {key:withWork[0].key, reason:"the newest week that already has saved decisions"};
-  return {key:WEEKS[0].key, reason:"the newest published week — none has decisions yet"};
+  /* ascending — WEEKS is newest-first, so reverse for "soonest ahead" */
+  const ahead=WEEKS.filter(w=>!weekIsPast(w.key)).slice().reverse();
+  if(ahead.length){
+    const started=ahead.find(w=>savedCount(w.key)>0);
+    if(started)
+      return {key:started.key,
+              reason:"the soonest order week you have already started"};
+    return {key:ahead[0].key, reason:"the next order week"};
+  }
+  return {key:WEEKS[0].key,
+          reason:"every published week has passed — this is the newest"};
 }
 /* ⛔ Repainted only when the week set, the selection or the decision counts move —
    never from render(). Repainting a <select> the reviewer has open closes it. */
@@ -2396,11 +2432,19 @@ function paintWeeks(){
      first so switchWeek has something to set, and a note written then would read
      "3 weeks published · ." with an empty reason. */
   if(note&&WEEK!=null){
-    const stale=!!(WEEKS.length&&WEEK!=null&&WEEKS[0].key!==WEEK);
+    /* ⛔⛔ STALE MEANS "THIS ORDER SUNDAY HAS PASSED", NOT "A NEWER WEEK EXISTS"
+       (fixed 2026-09-11). The old test was `WEEKS[0].key!==WEEK`, which warned
+       whenever anything newer was published — and since the build now publishes
+       TWO weeks every Monday, that fired on the DECIDE week every single time.
+       ⭐ Being on the earlier of two live weeks is the normal case: it is the one
+       you are meant to decide, and the later one is the look-ahead. A warning
+       that fires on the correct behaviour teaches people to ignore warnings. */
+    const stale=!!(WEEK!=null&&weekIsPast(WEEK));
     note.className=stale?"weeknote stale":"weeknote";
     note.innerHTML=stale
-      ? `⚠️ a newer order week (<b>${esc(WEEKS[0].key)}</b>) is published — you are `
-        +`NOT deciding it. ${esc(WEEK_REASON)}.`
+      ? `⚠️ this order week (<b>${esc(WEEK)}</b>) has PASSED — its purchase `
+        +`opportunity is over, so decisions here cannot reach an order. `
+        +`${esc(WEEK_REASON)}.`
       : (WEEKS.length>1
           ? `${WEEKS.length} weeks published · ${esc(WEEK_REASON)}. Each week saves `
             +`separately.`
