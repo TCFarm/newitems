@@ -1200,10 +1200,19 @@ function rowHtml(r){
        <span class="mut small">${oi.known
           ? (oi.inc>1?`orders in ${oi.inc}s`:"orders in singles")
           : "⚠️ increment unknown — verify before sending"}</span>
-       ${["approve","decline","defer","question"].map(x=>
+       ${/* ⛔ NO `question` BUTTON, and no note box below (cut 2026-09-11, Jack:
+             *"just cut it from the app - dont add more clicks or features"*).
+             ⭐ MEASURED FIRST: across all 72 decisions on the 2026-09-06 week —
+             40 approvals, 32 declines — the note was filled in ZERO times.
+             ⛔ And `question` was worse than unused: it accepted a question at
+             the moment a reviewer was unsure, wrote it to a file nobody is told
+             about (no card, no email — the Purchasing card the original proposal
+             specified was never built), and so the reviewer believed they had
+             asked someone and stopped chasing it. Ask in Teams instead, where a
+             person actually sees it. */
+          ["approve","decline","defer"].map(x=>
          `<button data-d="${x}" data-u="${esc(r.upc)}" class="${d.decision===x?"on":""}">${x}</button>`).join("")}
      </div>
-     <textarea placeholder="Note or question for Claude (optional)" data-n="${esc(r.upc)}">${esc(d.reviewer_note||"")}</textarea>
    </div></div>`;
 }
 /* ⭐⭐ AN ITEM APPROVED IN AN EARLIER WEEK IS OFF THE LIST (ruling: Jack,
@@ -1326,7 +1335,6 @@ document.addEventListener("input",e=>{
   const u=(q&&q.dataset.q)||(n&&n.dataset.n); if(!u) return;
   const cur=DECIDED[u]; if(!cur) return;          /* nothing decided yet — nothing to update */
   if(q) cur.approved_qty = q.value===""?null:Number(q.value);
-  if(n) cur.reviewer_note = n.value;
   cur._dirty=true; tally();
 });
 /* ⛔⛔ CAPTURE PHASE, NOT BUBBLE. The `.rowacts` wrapper carries
@@ -1367,10 +1375,9 @@ document.addEventListener("click",e=>{
           `Approve it again anyway?`)) return;
     }
     const qEl=document.querySelector(`input[data-q="${CSS.escape(u)}"]`);
-    const nEl=document.querySelector(`textarea[data-n="${CSS.escape(u)}"]`);
     DECIDED[u]={...cur,decision:b.dataset.d,
       approved_qty:qEl&&qEl.value!==""?Number(qEl.value):row.proposed_qty,
-      reviewer_note:nEl?nEl.value:"",_dirty:true,_row:row};
+      _dirty:true,_row:row};
     // ⭐ the same decision now exists in two places on one row (the collapsed
     // controls and the detail pane) — repaint BOTH, or the row can show
     // "approved" in one and nothing in the other.
@@ -2561,13 +2568,11 @@ document.getElementById("submit").addEventListener("click",async()=>{
     /* ⭐ second capture: whatever is on screen right now wins over what was
        recorded when the button was pressed. */
     const qEl=document.querySelector(`input[data-q="${CSS.escape(upc)}"]`);
-    const nEl=document.querySelector(`textarea[data-n="${CSS.escape(upc)}"]`);
     // ⛔ final guard: never submit a quantity the vendor will not ship.
     if(qEl && qEl.value!==""){
       const inc=parseInt(qEl.dataset.inc||"1",10)||1;
       d.approved_qty=snapQty(Number(qEl.value),inc);
     }
-    if(nEl) d.reviewer_note=nEl.value;
     const r=d._row||{};
     const f={Title:`${PAYLOAD.meta.order_sunday}:${upc}`,
       order_sunday:PAYLOAD.meta.order_sunday, period:PAYLOAD.meta.period, upc,
@@ -2629,7 +2634,10 @@ document.getElementById("submit").addEventListener("click",async()=>{
                   .filter(Boolean).join(" · ").slice(0,255),
       decision:d.decision, approved_qty:d.approved_qty??null,
       reviewer:account, decided_at:new Date().toISOString().slice(0,19),
-      reviewer_note:d.reviewer_note||""};
+      /* ⭐ still sent, always "" — the column exists on the list and on older
+         rows, and the prior-decision banner still renders a note if an old row
+         carries one. ⛔ Nothing can write a new one. */
+      reviewer_note:""};
     /* ⛔ `drained` is set ONLY on a brand-new row. Sending it on a PATCH reset an
        already-drained decision, so the next drain re-processed it: the original
        queue line stayed pending AND a second one was created. 24 + 12 = 36 units
