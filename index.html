@@ -251,7 +251,7 @@ details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-
        <div style="margin-top:4px"><a href="https://tcfarm.github.io/Purchasing/flow/" class="flowlink" title="How the whole weekly loop fits together">How this all fits together</a></div></div>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="reco" aria-selected="true">Recommended</button>
-    <button class="tab" role="tab" data-tab="all" aria-selected="false">Everything on promo</button>
+    <button class="tab" role="tab" data-tab="all" aria-selected="false">All candidates</button>
     <button class="tab" role="tab" data-tab="done" aria-selected="false">Decided</button>
     <button class="tab" role="tab" data-tab="map" aria-selected="false">Market map</button>
     <select id="week" aria-label="which order week" style="margin-left:8px"></select>
@@ -1344,8 +1344,10 @@ function render(){
         approved on an earlier week and are shown below — they are NOT counted
         above and need no decision here.`:""}</div>`;
   }
-  if(TAB==="all") head+=`<div class="banner">Every promo item we do not carry, ranked. Below the
-     recommended set these are shown for completeness — the order is the same score.</div>`;
+  if(TAB==="all") head+=`<div class="banner">Every orderable item we do not carry, ranked — not
+     just promo (ruling: Jack, 2026-09-07). Below the recommended set these are shown for
+     completeness — the order is the same score; an item ON PROMO gets a boost in that score,
+     it does not need to be on promo to appear here.</div>`;
   m.innerHTML=head+(v.length?v.map(rowHtml).join(""):`<div class="center">nothing here</div>`);
   watchRowMaps();   // ⭐ observe the sections this render created
   hydrateImages(m); // ⭐ swap data-src pack shots for authenticated blob: URLs
