@@ -370,6 +370,54 @@ async function graph(path,opts={}){
   if(!r.ok) throw new Error((j&&(j.error?.message||j.error_description))||`${r.status} on ${path}`);
   return j;
 }
+/* ⭐⭐ PACK-SHOT IMAGES NEED THE SAME BEARER TOKEN AS EVERYTHING ELSE. `lib/
+   review_list.publish_image` hands back a SharePoint `webUrl`, and an earlier
+   version of this page put that straight into `<img src>`. A plain `<img>` tag
+   cannot carry an Authorization header — it only loads if the browser ALSO
+   happens to hold a separate SharePoint web session cookie for this tenant, which
+   is a coincidence of the reviewer's browser state, not of being signed into this
+   app. Signed-in-but-broken-images (a "?" icon) is exactly that: the app's own
+   Graph token works fine for data, but the bare image request has nothing to
+   authenticate with. ⭐ Fix: fetch the bytes ourselves with the same token and
+   hand the DOM a blob: URL. The upload path is fixed (`lib/review_list.
+   IMAGE_DIR = 'NewItemReview/images'`), so the filename on the end of the stored
+   webUrl is enough to rebuild the Graph path — no payload/schema change needed,
+   so this is safe against every webUrl already recorded in a published payload. */
+const imgCache=new Map();
+function imgGraphPath(webUrl){
+  const name=decodeURIComponent(String(webUrl).split("/").pop().split("?")[0]);
+  if(!name) return null;
+  return `/${CFG.payloadDir}/images/${name}`;
+}
+async function fetchImageBlobUrl(webUrl){
+  if(!webUrl) return null;
+  if(imgCache.has(webUrl)) return imgCache.get(webUrl);
+  const p=(async()=>{
+    try{
+      const path=imgGraphPath(webUrl); if(!path) return null;
+      const t=await getToken();
+      const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/root:${encodeURI(path)}:/content`,
+                          {headers:{Authorization:"Bearer "+t}});
+      if(!r.ok) return null;
+      return URL.createObjectURL(await r.blob());
+    }catch(_){ return null; }               // ⛔ a missing/broken picture must
+  })();                                      // never break the row it belongs to
+  imgCache.set(webUrl,p);
+  return p;
+}
+/* Swap every lazily-marked `data-src` image under `root` for an authenticated
+   blob: URL. Runs after each render() — cheap, since fetchImageBlobUrl caches
+   per webUrl across renders/tabs/re-opens. */
+function hydrateImages(root){
+  root.querySelectorAll("img[data-src]").forEach(el=>{
+    const u=el.getAttribute("data-src"); el.removeAttribute("data-src");
+    const wasThumb=el.classList.contains("thumb");
+    fetchImageBlobUrl(u).then(b=>{
+      if(b) el.src=b; else el.replaceWith(Object.assign(document.createElement("div"),
+        {className:"no-thumb",textContent:wasThumb?"":"image unavailable"}));
+    });
+  });
+}
 
 /* ── data ─────────────────────────────────────────────────────────────── */
 const fmt=(v,d=2)=>v===null||v===undefined||v===""?"—":Number(v).toFixed(d);
@@ -1075,7 +1123,7 @@ function factorChips(r){
 }
 function rowHtml(r){
   const img=(r.rivir&&r.rivir.images&&r.rivir.images[0])
-    ? `<img class="thumb" src="${esc(r.rivir.images[0])}" alt="" loading="lazy">`
+    ? `<img class="thumb" data-src="${esc(r.rivir.images[0])}" alt="" loading="lazy">`
     : `<div class="no-thumb">no image</div>`;
   const d=DECIDED[r.upc]||{};
   const oi=orderInc(r);
@@ -1083,7 +1131,7 @@ function rowHtml(r){
   const why=(r.why||[]).map(w=>`<li>${esc(w)}</li>`).join("");
   const qwhy=(r.proposed_qty_why||[]).map(w=>`<li>${esc(w)}</li>`).join("");
   const wn=(r.spins_why_not||[]).map(w=>`<li>${esc(typeof w==="string"?w:JSON.stringify(w))}</li>`).join("");
-  const imgs=(r.rivir&&r.rivir.images||[]).map(u=>`<img src="${esc(u)}" alt="" loading="lazy">`).join("");
+  const imgs=(r.rivir&&r.rivir.images||[]).map(u=>`<img data-src="${esc(u)}" alt="" loading="lazy">`).join("");
   const certs=(r.rivir&&r.rivir.certifications||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("");
   return `<div class="row ${r.demoted?"demoted":""}" data-upc="${esc(r.upc)}">
    <div class="head" onclick="if(!event.target.closest('.rowacts'))this.parentNode.classList.toggle('open')">
@@ -1300,6 +1348,7 @@ function render(){
      recommended set these are shown for completeness — the order is the same score.</div>`;
   m.innerHTML=head+(v.length?v.map(rowHtml).join(""):`<div class="center">nothing here</div>`);
   watchRowMaps();   // ⭐ observe the sections this render created
+  hydrateImages(m); // ⭐ swap data-src pack shots for authenticated blob: URLs
   tally();
 }
 function tally(){
