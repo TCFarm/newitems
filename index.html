@@ -254,6 +254,9 @@ details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-
     <button class="tab" role="tab" data-tab="all" aria-selected="false">All candidates</button>
     <button class="tab" role="tab" data-tab="done" aria-selected="false">Decided</button>
     <button class="tab" role="tab" data-tab="map" aria-selected="false">Market map</button>
+    <label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;
+                  color:var(--ink-2);margin-left:10px;cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="promoOnlyChk"> On promo only</label>
     <select id="week" aria-label="which order week" style="margin-left:8px"></select>
   </div>
 </header>
@@ -1292,14 +1295,24 @@ function approvedElsewhere(){
   }
   return out;
 }
+/* ⭐ EXPLICIT "on promo only" — the 2026-09-07 ruling widened the candidate pool
+   to every orderable item, promo or not (see the "all candidates" banner), which
+   is correct for finding every worthwhile add but drops the one question this
+   filter exists for: "what's cheap to bring in RIGHT NOW". ⛔ Applies only to the
+   two candidate-browsing tabs — a decided item stays visible under Decided
+   regardless, because that is where a reviewer checks "what happened to that
+   item" and hiding it there would be wrong for the same reason `done` never
+   filters on anything else. */
+let PROMO_ONLY=false;
 function visible(){
   const prior=approvedElsewhere();
   /* ⭐ Decided keeps showing them — this is where a reviewer looks for "what
      happened to that item", so it is the one place hiding it would be wrong. */
   if(TAB==="done") return ROWS.filter(r=>DECIDED[r.upc]||prior[r.upc]);
+  const onPromo=r=>!PROMO_ONLY||r.on_promo;
   if(TAB==="reco") return ROWS.filter(r=>!DECIDED[r.upc]&&!prior[r.upc]
-                                         &&!r.demoted&&r.score!==null).slice(0,60);
-  return ROWS.filter(r=>!DECIDED[r.upc]&&!prior[r.upc]);
+                                         &&!r.demoted&&r.score!==null&&onPromo(r)).slice(0,60);
+  return ROWS.filter(r=>!DECIDED[r.upc]&&!prior[r.upc]&&onPromo(r));
 }
 function render(){
   const m=document.getElementById("main");
@@ -1347,7 +1360,8 @@ function render(){
   if(TAB==="all") head+=`<div class="banner">Every orderable item we do not carry, ranked — not
      just promo (ruling: Jack, 2026-09-07). Below the recommended set these are shown for
      completeness — the order is the same score; an item ON PROMO gets a boost in that score,
-     it does not need to be on promo to appear here.</div>`;
+     it does not need to be on promo to appear here. <b>On promo only</b> above narrows to just
+     what's cheap to bring in right now.</div>`;
   m.innerHTML=head+(v.length?v.map(rowHtml).join(""):`<div class="center">nothing here</div>`);
   watchRowMaps();   // ⭐ observe the sections this render created
   hydrateImages(m); // ⭐ swap data-src pack shots for authenticated blob: URLs
@@ -1399,6 +1413,7 @@ document.addEventListener("input",e=>{
    repro: bubble-phase listener fired 0 times, capture-phase fired 1.
    ⭐ Capture runs document -> target, so this fires BEFORE the wrapper can stop
    anything, and the wrapper still does its job for every other listener. */
+document.getElementById("promoOnlyChk").onchange=e=>{PROMO_ONLY=e.target.checked; render();};
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-tab]");
   if(t){document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x===t));
