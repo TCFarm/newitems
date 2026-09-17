@@ -624,7 +624,7 @@ function sellLine(r){
 
 /* one plain sentence: what we make on it */
 function moneyLine(r){
-  const pr=num(r.price), mg=num(r.margin_regular), sp=num(r.sale_price),
+  const pr=num(rPrice(r)), mg=num(r.margin_regular), sp=num(r.sale_price),
         sm=num(r.sale_margin), rc=num(r.regular_cost), pc=num(r.promo_cost);
   if(pr===null) return "⛔ No price — we could not check whether the margin works.";
   let t=`Sell at <b>${money(pr)}</b>`;
@@ -846,7 +846,7 @@ function tile(v, label, sub, cls){
 function tiles(r){
   const u=num(r.proj_units_wk_calibrated), lo=num(r.proj_p10), hi=num(r.proj_p90),
         bar=num(r.min_units_wk), p=num(r.p_clears_bar), h=num(r.households_wk),
-        pr=num(r.price), mg=num(r.margin_regular), sp=num(r.sale_price),
+        pr=num(rPrice(r)), mg=num(r.margin_regular), sp=num(r.sale_price),
         sm=num(r.sale_margin), sw=num(r.shelf_weeks), q=r.proposed_qty,
         acv=num(r.nc_acv), g=num(r.nc_growth_pct),
         foc=num(r.first_order_cost), cap=r.competitor_cap, w=num(r.promo_weeks);
@@ -956,7 +956,7 @@ function mktPanel(r){
 }
 function compStrip(r){
   const order=[["lakewinds","LW"],["wholefoods","WF"],["target","TGT"]];
-  const c=r.competitor_prices||{}, cap=r.competitor_cap, pr=num(r.price);
+  const c=r.competitor_prices||{}, cap=r.competitor_cap, pr=num(rPrice(r));
   const pills=order.map(([k,lbl])=>{
     const v=c[k];
     if(!v||v.price==null) return `<span class="cp none"><span class="r">${lbl}</span>no match</span>`;
@@ -1421,7 +1421,7 @@ function render(){
     const ap=dec.filter(x=>x.d.decision==="approve");
     const units=ap.reduce((n,x)=>n+(Number(x.d.approved_qty)||0),0);
     const cash=ap.reduce((n,x)=>n+((Number(x.d.approved_qty)||0)*
-                (Number(x.r.promo_cost)||Number(x.r.regular_cost)||0)),0);
+                (Number(x.r.promo_cost)||Number(rCost(x.r))||0)),0);
     const by=c=>dec.filter(x=>x.d.decision===c).length;
     head+=`<div class="banner"><b>${ap.length} approved</b> &middot; ${units} units
       &middot; <b>${money(cash)}</b> committed at cost
