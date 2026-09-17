@@ -432,6 +432,15 @@ function hydrateImages(root){
 /* ── data ─────────────────────────────────────────────────────────────── */
 const fmt=(v,d=2)=>v===null||v===undefined||v===""?"—":Number(v).toFixed(d);
 const money=v=>v===null||v===undefined||v===""?"—":"$"+Number(v).toFixed(2);
+/* ⛔⛔ A MANUALLY UPLOADED ROW KEEPS ITS NUMBERS UNDER DIFFERENT NAMES. `price` and
+   `regular_cost` are the KeHE price-file fields; an uploaded row carries `srp` and
+   `wholesale`. Only the Submit handler fell back, so the CARD showed "—" for price,
+   cost and margin while the row really held $26.08 / $49.99 — and Julia would have
+   approved a $107.88 item seeing nothing at all. ⭐ ONE resolver, used everywhere,
+   so no surface can disagree with another. Found by an adversarial review,
+   2026-09-17. */
+const rPrice = r => (r && (r.price ?? r.srp ?? null));
+const rCost  = r => (r && (r.regular_cost ?? r.promo_cost ?? r.wholesale ?? null));
 const pct=v=>v===null||v===undefined||v===""?"—":(Number(v)*100).toFixed(0)+"%";
 /* ⭐ Flatten anything the payload holds into a Text-column-safe string.
    ⛔ Never assume a payload field is a string — several are lists or objects, and
@@ -1072,8 +1081,8 @@ function candRow(r){
     <td><b>${esc(r.brand||"")}</b></td>
     <td><b>${esc(r.description||"")}</b> <span class="mut small">proposed</span></td>
     <td class="n"><span class="mut small">new</span></td>
-    <td class="n"><b>${money(r.price)}</b></td>
-    <td class="n">${r.regular_cost==null?"&mdash;":money(r.regular_cost)}</td>
+    <td class="n"><b>${money(rPrice(r))}</b></td>
+    <td class="n">${rCost(r)==null?"&mdash;":money(rCost(r))}</td>
     <td class="n">${mg==null?"&mdash;":Math.round(mg*100)+"%"}</td>
     <td class="n"><b>~${num1(r.proj_units_wk_calibrated)}</b><br><span class="mut small">est</span></td>
     <td class="n">&mdash;<br><span class="mut small">no history</span></td>
@@ -1198,7 +1207,7 @@ function rowHtml(r){
      <div class="idcol"><div class="title">${esc(r.description||"(no description)")}</div>
        <div class="brand">${esc(r.brand||"")} · ${esc(r.subcategory||"")}</div>
        <div class="chips">${factorChips(r)}</div></div>
-     <div class="nums"><div class="big">${money(r.price)}</div>
+     <div class="nums"><div class="big">${money(rPrice(r))}</div>
        <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk${
          r.margin_regular!=null?` · ${Math.round(r.margin_regular*100)}% margin`:""}</div>
        <!-- DISTRIBUTION ON THE COLLAPSED ROW (Jack, 2026-09-04). The list is the
@@ -1284,9 +1293,9 @@ function rowHtml(r){
      </details>
      <details class="raw"><summary class="mut small">every factor and figure</summary>
        <div class="grid">
-         <div class="cell"><b>${money(r.price)}</b><span>our price</span></div>
+         <div class="cell"><b>${money(rPrice(r))}</b><span>our price</span></div>
          <div class="cell"><b>${money(r.sale_price)}</b><span>on promo</span></div>
-         <div class="cell"><b>${money(r.regular_cost)}</b><span>regular cost</span></div>
+         <div class="cell"><b>${money(rCost(r))}</b><span>regular cost</span></div>
          <div class="cell"><b>${money(r.promo_cost)}</b><span>promo cost</span></div>
          <div class="cell"><b>${fmt(r.proj_units_wk_calibrated,2)}</b><span>units/wk</span></div>
          <div class="cell"><b>${pct(r.p_clears_bar)}</b><span>clears its floor</span></div>
@@ -1573,6 +1582,33 @@ async function saveAnswers(batchId){
   }catch(e){ st.textContent=`⛔ ${e.message}`; }
 }
 
+/* ⛔⛔ WITHOUT THIS THERE IS NO WAY OUT OF A BAD BATCH. A footer row with no UPC, a
+   vendor answer that cannot be satisfied, or the wrong order week — any of them
+   blocked the whole upload with no control to stop it, so the trigger re-asked the
+   same questions every five minutes for ever. ⭐ Abandoning is REVERSIBLE in the
+   sense that matters: the files and the parsed record stay, nothing is deleted, and
+   a corrected batch is just a new upload.
+   ⚠️ It does NOT retract rows already published to a review week — those are
+   removed the next time a batch for that week publishes. The confirm says so,
+   because a control whose limits are not stated is one people over-trust. */
+async function abandonBatch(batchId){
+  const b=(BATCHES||[]).find(x=>x.batch_id===batchId); if(!b) return;
+  if(!confirm(`Abandon batch ${batchId}?\n\nIt stops being processed and its `
+     +`questions go away. The files and what we parsed are kept.\n\n`
+     +`⛔ If it already published items to a review week, they stay there until `
+     +`another batch for that week publishes — decline them there if you do not `
+     +`want them.`)) return;
+  const st=document.getElementById("bstatus");
+  try{
+    const lid=await intakeListId();
+    await graph(`/sites/${CFG.siteId}/lists/${lid}/items/${b._id}/fields`,
+      {method:"PATCH", body:JSON.stringify({state:"abandoned",
+        note:`Abandoned by ${account} on ${new Date().toISOString().slice(0,10)}.`})});
+    if(st) st.textContent=`✅ ${batchId} abandoned — it will not be processed again.`;
+    BATCHES=await loadBatches(); render();
+  }catch(e){ if(st) st.textContent=`⛔ ${e.message}`; }
+}
+
 function batchHtml(b){
   let qs=[]; try{ qs=JSON.parse(b.questions_json||"[]")||[]; }catch(_){}
   const blocking=qs.filter(q=>q.severity==="blocking");
@@ -1600,6 +1636,8 @@ function batchHtml(b){
       <span class="mut">${b.candidates||0} item(s)${b.blocked?`, ${b.blocked} blocked`:""}</span>
       ${b.vendor_hint?`<span class="mut">vendor: ${esc(b.vendor_hint)}</span>`:""}
       <span class="mut">${esc(b.uploaded_by||"")}</span>
+      ${b.parsed_at?`<span class="mut">last checked ${esc(String(b.parsed_at).replace("T"," ").slice(0,16))}</span>`
+                   :`<span class="mut">not checked yet</span>`}
     </div>
     ${b.note?`<div class="mut" style="margin-top:6px">${esc(b.note)}</div>`:""}
     ${blocking.length?`<div style="margin-top:10px"><b>⛔ ${blocking.length}
@@ -1613,6 +1651,8 @@ function batchHtml(b){
        ${verify.map(q).join("")}</div>`:""}
     ${qs.length?`<button class="primary" style="margin-top:8px"
         onclick="saveAnswers('${esc(b.batch_id)}')">Save answers</button>`:""}
+    ${state==="abandoned"?"":`<button style="margin-top:8px;margin-left:8px"
+        onclick="abandonBatch('${esc(b.batch_id)}')">Abandon this batch</button>`}
   </section>`;
 }
 
