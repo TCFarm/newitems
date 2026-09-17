@@ -576,6 +576,14 @@ function orderInc(r){
   if(["EA","EACH","EAC","UN","UNIT"].includes(v)) return {inc:1, known:true};
   const n = parseInt(v,10);
   if(Number.isFinite(n) && n >= 1) return {inc:n, known:true};
+  /* ⛔⛔ A MANUALLY UPLOADED ROW HAS NO `unit_of_sale` — that field is KeHE's. It
+     carries `case_pack`, the vendor's own case size, which IS the orderable
+     increment. Without this the increment read 1, the chip said "order increment
+     unknown", and a reviewer could approve 7 of a 6-pack; nothing downstream rounds
+     it, so the purchase order went out asking for 7. Found by an adversarial
+     review, 2026-09-17. */
+  const cp = parseInt(String(r.case_pack ?? "").trim(), 10);
+  if(Number.isFinite(cp) && cp >= 1) return {inc:cp, known:true, basis:"case pack"};
   return {inc:1, known:false};
 }
 /* round UP to the next orderable multiple — never down, or the order is short */
@@ -1156,7 +1164,12 @@ function factorChips(r){
   if(r.carried_state==="lapsed") c.push('<span class="chip warnc">BRING-BACK — we carried this before</span>');
   if(r.storage==="R") c.push('<span class="chip warnc">REFRIGERATED — tightest space</span>');
   if(r.storage==="F") c.push('<span class="chip">frozen</span>');
-  if((r.our_units_wk_subcat||0)===0) c.push('<span class="chip good">fills a gap we don\'t serve</span>');
+  /* ⛔ `(undefined||0)===0` IS TRUE, so a manual row — which has no subcategory
+     absorption figure at all — claimed to fill a gap we had never measured. ⭐ An
+     ABSENT measurement and a measured ZERO are different facts and must not share a
+     chip. Found by an adversarial review, 2026-09-17. */
+  if(r.our_units_wk_subcat!=null && Number(r.our_units_wk_subcat)===0)
+    c.push('<span class="chip good">fills a gap we don\'t serve</span>');
   if(r.demoted) c.push('<span class="chip bad">DEMOTED on the real price</span>');
   if(String(r.regular_cost_basis||"").includes("DERIVED"))
     c.push('<span class="chip warnc">cost derived, not quoted</span>');
@@ -2938,7 +2951,11 @@ document.getElementById("submit").addEventListener("click",async()=>{
       order_sunday:PAYLOAD.meta.order_sunday, period:PAYLOAD.meta.period, upc,
       brand:r.brand||"", item:r.description||"", subcategory:r.subcategory||"",
       storage:r.storage||"", rank:r.rank??null, score:r.score??null,
-      gp_13wk:r.gp_13wk??null, price:r.price??null, regular_cost:r.regular_cost??null,
+      gp_13wk:r.gp_13wk??null,
+      /* ⭐ Fall back to the manual row's own fields so every consumer downstream —
+         newitem_drain's handoff CSV, the advisory retail, vendor_orders — sees a
+         cost and a retail regardless of where the candidate came from. */
+      price:(r.price??r.srp??null), regular_cost:(r.regular_cost??r.wholesale??null),
       promo_cost:r.promo_cost??null, proposed_qty:r.proposed_qty??null,
       proj_units_wk_calibrated:r.proj_units_wk_calibrated??null,
       p_clears_bar:r.p_clears_bar??null, carried_state:r.carried_state||"",
@@ -2960,7 +2977,16 @@ document.getElementById("submit").addEventListener("click",async()=>{
       vendor:r.vendor||"", item_type:r.item_type||"",
       origin:r.origin||"spins", supplier_item_code:r.supplier_item_code||"",
       url:r.url||"",
-      sku:r.lapsed_sku||"", unit_of_sale:r.unit_of_sale??null,
+      /* ⛔⛔ A MANUAL ROW'S COMMERCIAL FIELDS HAVE DIFFERENT NAMES, and writing only
+         the KeHE ones sent ProductPipeline a direct-vendor item with NO cost, NO
+         retail and NO pack size. `regular_cost`/`price`/`unit_of_sale` are the KeHE
+         price-file fields; an uploaded row carries `wholesale`, `srp`, `map_price`
+         and `case_pack`. ⛔ `map_price` reached NOTHING at all, so the MAP-as-floor
+         ruling could never have been implemented however SPINS rules it — the value
+         died here. Found by an adversarial review, 2026-09-17. */
+      wholesale:r.wholesale??null, map_price:r.map_price??null,
+      case_pack:r.case_pack??null,
+      sku:r.lapsed_sku||"", unit_of_sale:(r.unit_of_sale??r.case_pack??null),
       shelf_weeks:r.shelf_weeks??null, promo_source:r.promo_source||"",
       nc_acv:r.nc_acv??null, nc_growth_pct:r.nc_growth_pct??null,
       our_units_wk_subcat:r.our_units_wk_subcat??null,
