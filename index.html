@@ -254,6 +254,7 @@ details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-
     <button class="tab" role="tab" data-tab="all" aria-selected="false">All candidates</button>
     <button class="tab" role="tab" data-tab="done" aria-selected="false">Decided</button>
     <button class="tab" role="tab" data-tab="map" aria-selected="false">Market map</button>
+    <button class="tab" role="tab" data-tab="add" aria-selected="false">Add items</button>
     <label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;
                   color:var(--ink-2);margin-left:10px;cursor:pointer;white-space:nowrap">
       <input type="checkbox" id="promoOnlyChk"> On promo only</label>
@@ -281,6 +282,12 @@ const CFG = {
   siteId: "tcfarm0.sharepoint.com,d5fe3f11-af72-4c8b-b877-80e69226ca49,753c3608-e66a-4ec6-9fdf-5fb646ffa4fa",
   listName: "NewItemReview",
   payloadDir: "NewItemReview",
+  /* ⭐ the manual-upload front door (2026-09-17). Files go to the Documents
+     library under `intakeDir/<batch_id>/`; the batch's STATE and its question
+     thread live on the `intakeList` list. ⛔ Both are read and written AS THE
+     SIGNED-IN USER — this page can never hold an app secret. */
+  intakeList: "ManualIntake",
+  intakeDir: "ManualIntake",
   scopes:["https://graph.microsoft.com/Sites.ReadWrite.All","offline_access","openid","profile"]
 };
 const AUTH=`https://login.microsoftonline.com/${CFG.tenantId}/oauth2/v2.0`;
@@ -473,6 +480,42 @@ async function loadPayload(w){
     throw new Error(`⛔ ${w.name} declares order_sunday ${decl} — the file is not `
       +`the week it claims to be. Rebuild it; nothing is safe to decide here.`);
   return doc;
+}
+let MANUAL_NOTE="";
+/* ⭐ The week's uploaded candidates. -> {rows, note}.
+   ⛔ A 404 is NORMAL — most weeks have no upload — and is NOT an error. Any other
+   failure IS one, and comes back as a note the page shows, because an empty merge
+   and a failed merge are indistinguishable on screen otherwise. */
+async function loadManual(sunday){
+  const name=`manual_${sunday}.json`;
+  try{
+    const t=await getToken();
+    const path=encodeURI(`/${CFG.payloadDir}/${name}`);
+    const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/root:${path}:/content`,
+                        {headers:{Authorization:"Bearer "+t}});
+    if(r.status===404) return {rows:[], note:""};
+    if(!r.ok) return {rows:[], note:`⛔ ${name} could not be read (${r.status}) — `
+      +`any manually uploaded items for this week are NOT on this list.`};
+    const doc=await r.json();
+    /* ⛔ THE FILE MUST BE THE WEEK IT CLAIMS TO BE — the same rule loadPayload
+       enforces. A decision recorded against the wrong week is invisible. */
+    const decl=((doc||{}).meta||{}).order_sunday;
+    if(decl && String(decl)!==String(sunday))
+      return {rows:[], note:`⛔ ${name} declares order_sunday ${decl} — refused.`};
+    /* ⭐ ALWAYS RECOMMENDED AND AT THE TOP (the rule SPEC-request-a-product.md
+       states for a customer request, and the same reasoning applies here): an
+       uploaded item is a decision someone has already part-made, not a discovery
+       competing for attention. ⛔ It is not scored against ranked candidates. */
+    const rows=(doc.rows||[]).map((r,i)=>({...r,
+      is_candidate:true, manual:true, rank:-1000+i,
+      carried_state:r.carried_state||"new",
+      why:(r.proposed_qty_why||[]).concat(
+        [`⭐ uploaded by hand${r.vendor?` — supplier ${r.vendor}`:""}. Always shown `
+        +`and always recommended; it is not ranked against SPINS candidates.`])}));
+    return {rows, note:""};
+  }catch(e){
+    return {rows:[], note:`⛔ manual items for this week could not be loaded: ${e.message}`};
+  }
 }
 async function listId(){
   if(LISTID) return LISTID;
@@ -1319,11 +1362,21 @@ function render(){
   // ⭐ the map is its own view — it does not share the row list, the decision
   // footer or the filters, so it short-circuits before any of that runs.
   if(TAB==="map"){ m.classList.add("mapview"); renderMarketMap(m); return; }
+  /* ⭐ The upload view is its own surface too — no row list, no decision footer,
+     no week filters. It shares only the sign-in and the chosen order week. */
+  if(TAB==="add"){ m.classList.remove("mapview"); renderAddItems(m); return; }
   m.classList.remove("mapview");
   const v=visible();
   const st=PAYLOAD.meta.spins_state||{};
   let head="";
   if(st.note) head+=`<div class="banner">${esc(st.note)}</div>`;
+  if(MANUAL_NOTE) head+=`<div class="banner">${esc(MANUAL_NOTE)}</div>`;
+  const _man=ROWS.filter(r=>r.manual).length;
+  if(_man && TAB!=="done")
+    head+=`<div class="banner"><b>${_man} uploaded item${_man===1?"":"s"}</b> at the
+      top of this list — added by hand from a vendor file rather than recommended by
+      the model, so they carry no market projection. <span class="mut">Their
+      quantity is one case unless the sheet said otherwise.</span></div>`;
   /* ⛔ NEVER HIDE ROWS SILENTLY. A list that quietly shrank is indistinguishable
      from a build that produced fewer candidates, and the reviewer has no way to
      ask which. Say the number, say why, and say where they went. */
@@ -1367,6 +1420,227 @@ function render(){
   hydrateImages(m); // ⭐ swap data-src pack shots for authenticated blob: URLs
   tally();
 }
+
+/* ══ ADD ITEMS — the manual / direct-vendor front door ══════════════════════
+   ⭐⭐ RULING (Jack, 2026-09-17): *"We're trying to get rid of any conversational
+   intake rules. We want to get everything in the app so it's more standardized and
+   has less room for error ... We need it to work so that if she just went to the
+   app and uploaded this, she would get asked all the right information that she
+   needs or have the fields available for her to pre-fill out before having to go
+   back and forth."*
+
+   ⛔⛔ THE PAGE PARSES NOTHING. It uploads the files and creates a batch row;
+   `manual_intake.py` does every bit of reading, validating and vendor resolution.
+   ⭐ That split is deliberate and load-bearing: the parser has to be runnable
+   headless by a routine, and anything implemented in this page is unavailable to
+   the routine and untestable without a browser.
+
+   ⛔ TWO QUESTION SEVERITIES, which is Jack's split, not a UI flourish:
+       blocking — we cannot create or order the item; the batch stops
+       verify   — we filled it in; she confirms and it proceeds
+   ⭐ So a batch with only VERIFY questions publishes its candidates immediately
+   rather than waiting on her. */
+let BATCHES=null, BATCHBUSY=false;
+
+async function intakeListId(){
+  if(INTAKE_LID) return INTAKE_LID;
+  const j=await graph(`/sites/${CFG.siteId}/lists?$select=displayName,id`);
+  const l=(j.value||[]).find(x=>x.displayName===CFG.intakeList);
+  /* ⛔ The list is created ONCE, deliberately, by
+     scripts/create_manual_intake_list.py. A page that auto-created it would hide a
+     typo as a fresh empty board — and every batch Julia had already uploaded would
+     appear to have vanished. */
+  if(!l) throw new Error(`the ${CFG.intakeList} list does not exist on this site — `
+    +`run scripts/create_manual_intake_list.py --create`);
+  return (INTAKE_LID=l.id);
+}
+let INTAKE_LID=null;
+
+async function loadBatches(){
+  const id=await intakeListId();
+  const j=await graph(`/sites/${CFG.siteId}/lists/${id}/items?expand=fields&$top=200`);
+  return (j.value||[]).map(it=>({...(it.fields||{}), _id:it.id}))
+    .filter(b=>b.batch_id)
+    .sort((a,b)=>String(b.uploaded_at||"").localeCompare(String(a.uploaded_at||"")));
+}
+
+/* ⛔ A batch id must be unique AND readable in a folder listing. The date makes it
+   sortable by eye; the random suffix makes two uploads in one minute distinct. */
+function newBatchId(){
+  const d=new Date().toISOString().slice(0,10);
+  const r=Math.random().toString(36).slice(2,6);
+  return `${d}-${r}`;
+}
+
+/* ⛔⛔ UPLOAD EACH FILE AND CHECK EACH RESULT. A failed upload that is not checked
+   produces a batch row pointing at a folder with nothing in it — and the parser
+   then reports "no files", which reads like Julia forgot to attach them. */
+async function uploadBatchFiles(batchId, files){
+  const t=await getToken(), done=[];
+  for(const f of files){
+    const path=encodeURI(`/${CFG.intakeDir}/${batchId}/${f.name}`);
+    const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/root:${path}:/content`,
+      {method:"PUT", headers:{Authorization:"Bearer "+t,
+       "Content-Type": f.type||"application/octet-stream"}, body:f});
+    if(!r.ok) throw new Error(`upload of ${f.name} failed (${r.status}) — `
+      +`⛔ the batch was NOT created, so nothing is half-uploaded`);
+    done.push(f.name);
+  }
+  return done;
+}
+
+async function createBatch(){
+  if(BATCHBUSY) return;
+  const files=[...(document.getElementById("bfiles")?.files||[])];
+  const pasted=(document.getElementById("bpaste")?.value||"").trim();
+  const vendor=(document.getElementById("bvendor")?.value||"").trim();
+  const sunday=(document.getElementById("bsunday")?.value||"").trim();
+  const st=document.getElementById("bstatus");
+  if(!files.length && !pasted){
+    st.textContent="⛔ attach at least one file, or paste some URLs."; return; }
+  /* ⛔ The order week is REQUIRED. `order_sunday` is the only thing separating one
+     week's decisions from another's — a batch with none publishes to no week at
+     all and looks, to Julia, exactly like a batch that failed. */
+  if(!sunday){ st.textContent="⛔ choose which order week these are for."; return; }
+  BATCHBUSY=true;
+  const btn=document.getElementById("bgo"); if(btn) btn.disabled=true;
+  const id=newBatchId();
+  try{
+    st.textContent=`uploading ${files.length} file(s)…`;
+    const names=await uploadBatchFiles(id, files);
+    /* ⭐ The row is created only AFTER every file is safely up. */
+    const lid=await intakeListId();
+    await graph(`/sites/${CFG.siteId}/lists/${lid}/items`,{method:"POST",
+      body:JSON.stringify({fields:{
+        Title:id, batch_id:id, state:"uploaded", order_sunday:sunday,
+        vendor_hint:vendor, pasted_text:pasted,
+        files_json:JSON.stringify(names), uploaded_by:account,
+        uploaded_at:new Date().toISOString().slice(0,19)}})});
+    st.textContent=`✅ batch ${id} created with ${names.length} file(s). `
+      +`It will be read on the next intake run, and any questions will appear here.`;
+    document.getElementById("bfiles").value="";
+    document.getElementById("bpaste").value="";
+    BATCHES=await loadBatches(); render();
+  }catch(e){
+    st.textContent=`⛔ ${e.message}`;
+  }finally{
+    BATCHBUSY=false; if(btn) btn.disabled=false;
+  }
+}
+
+/* ⛔⛔ ANSWERS ARE SENT AS DATA, NEVER AS A DECISION. Saving an answer moves the
+   batch to `answered`, and `manual_intake.py` RE-VALIDATES every one of them — a
+   typed UPC can be eleven digits too. ⭐ The page must not mark anything ready. */
+async function saveAnswers(batchId){
+  const b=(BATCHES||[]).find(x=>x.batch_id===batchId);
+  if(!b) return;
+  const st=document.getElementById("bstatus");
+  const answers={};
+  document.querySelectorAll(`[data-ans][data-batch="${CSS.escape(batchId)}"]`)
+    .forEach(el=>{
+      const v=(el.value||"").trim(); if(!v) return;
+      const key=el.dataset.key||"_batch", field=el.dataset.ans;
+      (answers[key]=answers[key]||{})[field]=v;
+    });
+  if(!Object.keys(answers).length){
+    st.textContent="⛔ nothing typed — answer at least one question first."; return; }
+  try{
+    const lid=await intakeListId();
+    /* ⭐ MERGE with whatever was answered before, so a second pass does not
+       discard the first. ⛔ The page is not the record: the list is. */
+    const prev=(()=>{ try{ return JSON.parse(b.answers_json||"{}")||{}; }
+                      catch(_){ return {}; } })();
+    for(const k of Object.keys(answers)) prev[k]={...(prev[k]||{}), ...answers[k]};
+    await graph(`/sites/${CFG.siteId}/lists/${lid}/items/${b._id}/fields`,
+      {method:"PATCH", body:JSON.stringify(
+        {answers_json:JSON.stringify(prev), state:"answered"})});
+    st.textContent=`✅ answers saved for ${batchId}. They are re-checked on the `
+      +`next intake run — an answer is not taken on trust.`;
+    BATCHES=await loadBatches(); render();
+  }catch(e){ st.textContent=`⛔ ${e.message}`; }
+}
+
+function batchHtml(b){
+  let qs=[]; try{ qs=JSON.parse(b.questions_json||"[]")||[]; }catch(_){}
+  const blocking=qs.filter(q=>q.severity==="blocking");
+  const verify=qs.filter(q=>q.severity!=="blocking");
+  const state=String(b.state||"");
+  const badge={uploaded:"waiting to be read", parsed:"needs your answers",
+               answered:"answers saved — re-checking", ready:"ready to review",
+               abandoned:"abandoned"}[state]||state;
+  const tone=state==="ready"?"var(--ok,#2e7d32)"
+            :state==="parsed"?"var(--bad,#b3261e)":"var(--ink-2)";
+  const q=(x,i)=>`<div style="margin:8px 0;padding:8px;border-left:3px solid
+      ${x.severity==="blocking"?"#b3261e":"#b8860b"};background:rgba(0,0,0,.02)">
+      <div><b>${esc(x.ask)}</b>${x.description?` <span class="mut">— ${esc(x.description)}</span>`:""}</div>
+      <div class="mut" style="font-size:12px;margin:3px 0">${esc(x.why||"")}</div>
+      <input data-ans="${esc(x.field)}" data-batch="${esc(b.batch_id)}"
+             data-key="${esc(x.key||x.upc||"_batch")}"
+             placeholder="${esc(x.value?("was: "+x.value):"your answer")}"
+             style="width:min(420px,100%);padding:5px">
+    </div>`;
+  return `<section class="card" style="padding:12px;margin:10px 0">
+    <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <b>${esc(b.batch_id)}</b>
+      <span style="color:${tone}">${esc(badge)}</span>
+      <span class="mut">order ${esc(b.order_sunday||"—")}</span>
+      <span class="mut">${b.candidates||0} item(s)${b.blocked?`, ${b.blocked} blocked`:""}</span>
+      ${b.vendor_hint?`<span class="mut">vendor: ${esc(b.vendor_hint)}</span>`:""}
+      <span class="mut">${esc(b.uploaded_by||"")}</span>
+    </div>
+    ${b.note?`<div class="mut" style="margin-top:6px">${esc(b.note)}</div>`:""}
+    ${blocking.length?`<div style="margin-top:10px"><b>⛔ ${blocking.length}
+       question${blocking.length===1?"":"s"} blocking this batch</b>
+       <div class="mut" style="font-size:12px">These cannot be worked out from the
+       files — nothing proceeds until they are answered.</div>
+       ${blocking.map(q).join("")}</div>`:""}
+    ${verify.length?`<div style="margin-top:10px"><b>${verify.length} to verify</b>
+       <div class="mut" style="font-size:12px">We filled these in ourselves. The
+       items are NOT held up — correct anything that is wrong.</div>
+       ${verify.map(q).join("")}</div>`:""}
+    ${qs.length?`<button class="primary" style="margin-top:8px"
+        onclick="saveAnswers('${esc(b.batch_id)}')">Save answers</button>`:""}
+  </section>`;
+}
+
+function renderAddItems(m){
+  const weeks=(WEEKS||[]).map(w=>w.key);
+  const opts=weeks.map(k=>`<option value="${esc(k)}"${k===WEEK?" selected":""}>${esc(k)}</option>`).join("");
+  m.innerHTML=`
+    <div class="banner">Upload whatever the vendor sent — a price list, a spec PDF,
+      a pile of URLs. ⛔ Nothing here approves or orders anything: the items join
+      the normal review list, at the top, and you decide them there like any other
+      candidate.</div>
+    <section class="card" style="padding:12px;margin:10px 0">
+      <h3 style="margin:0 0 8px">New upload</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:640px">
+        <label>Files
+          <input type="file" id="bfiles" multiple
+                 accept=".csv,.tsv,.txt,.md,.xlsx,.xlsm,.pdf"></label>
+        <label>…or paste URLs / notes
+          <textarea id="bpaste" rows="3" style="width:100%"
+            placeholder="https://… one per line, or anything else worth keeping"></textarea></label>
+        <label>Supplier <span class="mut">— only if the file has no Supplier column</span>
+          <input id="bvendor" placeholder="e.g. Ancient Nutrition" style="width:100%"></label>
+        <label>Which order week
+          <select id="bsunday">${opts}</select></label>
+        <div><button class="primary" id="bgo" onclick="createBatch()">Upload</button>
+             <span id="bstatus" class="mut"></span></div>
+      </div>
+      <div class="mut" style="font-size:12px;margin-top:8px">
+        ⭐ A file with a <b>Supplier</b> column can carry several suppliers at once —
+        each gets its own purchase order.</div>
+    </section>
+    <h3 style="margin:18px 0 4px">Batches</h3>
+    <div id="batchlist">${BATCHES===null?`<div class="mut">loading…</div>`
+      :(BATCHES.length?BATCHES.map(batchHtml).join("")
+        :`<div class="mut">nothing uploaded yet</div>`)}</div>`;
+  if(BATCHES===null)
+    loadBatches().then(b=>{BATCHES=b; if(TAB==="add") render();})
+                 .catch(e=>{document.getElementById("batchlist").innerHTML=
+                   `<div class="banner">⛔ ${esc(e.message)}</div>`;});
+}
+
 function tally(){
   const n=Object.keys(DECIDED).length;
   const a=Object.values(DECIDED).filter(d=>d.decision==="approve").length;
@@ -2552,7 +2826,25 @@ async function switchWeek(key, opts){
     if(!opts.cached) ALLDEC=await loadAllDecisions();
     const decided=decisionsFor(sunday);
     /* only now is anything committed */
-    PAYLOAD=doc; ROWS=doc.rows||[]; DECIDED=decided; WEEK=key;
+    /* ⭐⭐ MANUAL CANDIDATES ARE MERGED IN AT LOAD, FROM THEIR OWN FILE.
+       ⛔ They are NOT written into `payload_<sunday>.json`: the next
+       `newitem_week.py` run replaces that file wholesale, so an uploaded item
+       stored there would disappear a week later — silently, after Julia had
+       already decided it. ⭐ `manual_<sunday>.json` is rebuilt by
+       `manual_intake.py` from every READY batch for the week, so the two writers
+       never touch the same file.
+       ⛔ A FAILURE TO LOAD THEM IS SAID OUT LOUD, never swallowed: a missing merge
+       looks exactly like a batch that produced nothing, and Julia would re-upload
+       a file that had worked. */
+    const manual=await loadManual(sunday);
+    /* ⛔ The uploaded row wins a UPC collision with a SPINS candidate. She has
+       physically been sent this item by a vendor; the ranked row is a discovery.
+       ⭐ And it carries the VENDOR, which the SPINS row would claim is KeHE. */
+    const mu=new Set(manual.rows.map(r=>r.upc).filter(Boolean));
+    PAYLOAD=doc;
+    ROWS=manual.rows.concat((doc.rows||[]).filter(r=>!mu.has(r.upc)));
+    MANUAL_NOTE=manual.note;
+    DECIDED=decided; WEEK=key;
     WEEK_REASON=opts.reason||WEEK_REASON;
     MAPDATA=null; MAPFROM=null;          // ⛔ the market map is per week too
     for(const k of Object.keys(DECIDED)) DECIDED[k]._row=ROWS.find(r=>r.upc===k);
@@ -2656,6 +2948,18 @@ document.getElementById("submit").addEventListener("click",async()=>{
          every decision recorded WHAT was approved and almost nothing about WHY, or
          against which build. Backfilling later is guesswork about what was on
          screen at the time — so it is captured at the moment of the decision. */
+      /* ⭐⭐ WHO WE BUY IT FROM, ON THE DECISION ITSELF (2026-09-17).
+         ⛔ `newitem_drain.resolve_vendor` reads this FIRST, ahead of the build
+         payload and ahead of the KeHE catalogue — a human's answer outranks any
+         derivation. ⛔ Without it every approval defaults down the chain to KeHE,
+         which is how a direct-vendor item lands on a KeHE purchase order at $0.00
+         with a blank item number.
+         ⚠️ These five column names must exist on the list or the POST is a bare
+         HTTP 400 that loses THE WHOLE ROW — they were added by
+         scripts/add_newitem_vendor_columns.py. */
+      vendor:r.vendor||"", item_type:r.item_type||"",
+      origin:r.origin||"spins", supplier_item_code:r.supplier_item_code||"",
+      url:r.url||"",
       sku:r.lapsed_sku||"", unit_of_sale:r.unit_of_sale??null,
       shelf_weeks:r.shelf_weeks??null, promo_source:r.promo_source||"",
       nc_acv:r.nc_acv??null, nc_growth_pct:r.nc_growth_pct??null,
