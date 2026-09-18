@@ -1538,11 +1538,18 @@ async function createBatch(){
         vendor_hint:vendor, pasted_text:pasted,
         files_json:JSON.stringify(names), uploaded_by:account,
         uploaded_at:new Date().toISOString().slice(0,19)}})});
-    st.textContent=`✅ batch ${id} created with ${names.length} file(s). `
+    /* ⛔⛔ THE CONFIRMATION MUST SURVIVE THE RE-RENDER THAT FOLLOWS IT. Setting the
+       status here and THEN calling render() rebuilds #main, which replaces #bstatus
+       with a fresh empty element — so the only signal that the upload worked was
+       destroyed microseconds after it was written, and Julia pressed Upload and saw
+       NOTHING. ⭐ Found by the browser click-through, 2026-09-17; no function-level
+       test could see it, because the function did set the text. */
+    const msg=`✅ batch ${id} created with ${names.length} file(s). `
       +`It will be read on the next intake run, and any questions will appear here.`;
     document.getElementById("bfiles").value="";
     document.getElementById("bpaste").value="";
     BATCHES=await loadBatches(); render();
+    const st2=document.getElementById("bstatus"); if(st2) st2.textContent=msg;
   }catch(e){
     st.textContent=`⛔ ${e.message}`;
   }finally{
