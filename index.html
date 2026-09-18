@@ -148,6 +148,28 @@ button.on[data-d=decline]{background:var(--no);color:#fff;border-color:var(--no)
 button.on[data-d=defer]{background:#5b6472;color:#fff;border-color:#5b6472}
 button.on[data-d=question]{background:var(--warn);color:#fff;border-color:var(--warn)}
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* ⭐ THE NATIVE FILE INPUT LOOKS NOTHING LIKE A BUTTON on macOS/Chrome — it renders
+   a small grey OS widget that reads as disabled, and Julia has to guess it is the
+   thing to press. ⛔ The input is still a real <input type=file>, just visually
+   replaced: the label drives it, so keyboard, drag-drop and accessibility all keep
+   working. ⛔ NEVER `display:none` on the input — that removes it from the a11y tree
+   and some automation; clip it instead. */
+.filebtn{display:inline-flex;align-items:center;gap:7px;font:inherit;
+         padding:7px 13px;border-radius:7px;border:1px solid var(--line);
+         background:var(--card);cursor:pointer;user-select:none}
+.filebtn:hover{background:var(--chip);border-color:var(--accent)}
+.filebtn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+input[type=file].clipped{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+                         overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.filename{color:var(--mut);font-size:12.5px}
+/* ⭐ The purchase-order panel on the Decided tab — the step AFTER submitting. */
+.vpo{padding:14px 16px;margin:10px 0 14px}
+.vpohead{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.vpov{border-top:1px solid var(--line);margin-top:12px;padding-top:11px}
+.vpovh{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline}
+.vpoi{margin:8px 0 10px;padding-left:20px;font-size:13.6px;color:var(--mut)}
+.vpoi li{margin-bottom:5px}
+.vporow{display:flex;flex-wrap:wrap;gap:8px}
 button:disabled{opacity:.5;cursor:default}
 input[type=number],textarea{font:inherit;padding:6px 8px;border:1px solid var(--line);
                             border-radius:7px;background:var(--card)}
@@ -1432,6 +1454,10 @@ function render(){
         approved on an earlier week and are shown below — they are NOT counted
         above and need no decision here.`:""}</div>`;
   }
+  /* ⭐ THE PURCHASE ORDERS SIT WITH THE DECISIONS THAT CAUSED THEM (Jack,
+     2026-09-17: present them "in that order's screen"). Submitting already lands
+     here, so the next step is on the screen she arrives at. */
+  if(TAB==="done") head+=vpoPanel();
   if(TAB==="all") head+=`<div class="banner">Every orderable item we do not carry, ranked — not
      just promo (ruling: Jack, 2026-09-07). Below the recommended set these are shown for
      completeness — the order is the same score; an item ON PROMO gets a boost in that score,
@@ -1548,6 +1574,7 @@ async function createBatch(){
       +`It will be read on the next intake run, and any questions will appear here.`;
     document.getElementById("bfiles").value="";
     document.getElementById("bpaste").value="";
+    fileChosen();                       /* ⛔ or it still claims files are attached */
     BATCHES=await loadBatches(); render();
     const st2=document.getElementById("bstatus"); if(st2) st2.textContent=msg;
   }catch(e){
@@ -1663,6 +1690,18 @@ function batchHtml(b){
   </section>`;
 }
 
+/* ⛔ A styled file button hides the browser's own "3 files selected" text, so the
+   page has to say it instead — otherwise Julia presses it, picks files, and the
+   screen looks exactly as it did before. */
+function fileChosen(){
+  const f=document.getElementById("bfiles"), n=document.getElementById("bfilesname");
+  if(!f||!n) return;
+  const list=[...(f.files||[])];
+  n.textContent = !list.length ? "no files chosen"
+    : list.length===1 ? list[0].name
+    : `${list.length} files: ${list.map(x=>x.name).join(", ")}`;
+}
+
 function renderAddItems(m){
   const weeks=(WEEKS||[]).map(w=>w.key);
   const opts=weeks.map(k=>`<option value="${esc(k)}"${k===WEEK?" selected":""}>${esc(k)}</option>`).join("");
@@ -1674,9 +1713,12 @@ function renderAddItems(m){
     <section class="card" style="padding:12px;margin:10px 0">
       <h3 style="margin:0 0 8px">New upload</h3>
       <div style="display:flex;flex-direction:column;gap:8px;max-width:640px">
-        <label>Files
-          <input type="file" id="bfiles" multiple
-                 accept=".csv,.tsv,.txt,.md,.xlsx,.xlsm,.pdf"></label>
+        <div>
+          <label class="filebtn" for="bfiles">📎 Choose files
+            <input type="file" id="bfiles" class="clipped" multiple
+                   accept=".csv,.tsv,.txt,.md,.xlsx,.xlsm,.pdf"></label>
+          <span class="filename" id="bfilesname">no files chosen</span>
+        </div>
         <label>…or paste URLs / notes
           <textarea id="bpaste" rows="3" style="width:100%"
             placeholder="https://… one per line, or anything else worth keeping"></textarea></label>
@@ -1719,6 +1761,7 @@ function tally(){
    fought mid-keystroke, but nothing invalid survives. Rounds UP: a short order is
    worse than one extra minimum. */
 document.addEventListener("change",e=>{
+  if(e.target && e.target.id==="bfiles"){ fileChosen(); return; }
   const q=e.target.closest("input[data-q]"); if(!q) return;
   const inc=parseInt(q.dataset.inc||"1",10)||1;
   const was=Number(q.value), now=snapQty(was,inc);
@@ -1749,6 +1792,16 @@ document.addEventListener("input",e=>{
    anything, and the wrapper still does its job for every other listener. */
 document.getElementById("promoOnlyChk").onchange=e=>{PROMO_ONLY=e.target.checked; render();};
 document.addEventListener("click",e=>{
+  const _b=e.target.closest("#vpobuild");
+  if(_b){ if(!_b.disabled) vpoBuild(); return; }
+  const _dl=e.target.closest("[data-vpodl]");
+  if(_dl){
+    const v=(VPO&&VPO.vendors||[]).find(x=>x.vendor===_dl.dataset.vpodl);
+    if(v) vpoDownload(v.file, v.file_name);
+    return;
+  }
+  const _pl=e.target.closest("[data-vpoplaced]");
+  if(_pl){ if(!_pl.disabled) vpoPlaced(_pl.dataset.vpoplaced); return; }
   const t=e.target.closest("[data-tab]");
   if(t){document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x===t));
         TAB=t.dataset.tab; render(); return;}
@@ -3137,6 +3190,228 @@ document.getElementById("submit").addEventListener("click",async()=>{
   }
   tally(); render();
 });
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PURCHASE ORDERS FOR A DIRECT VENDOR — the step after Submit.
+   ⭐⭐ RULING (Jack, 2026-09-17): *"I don't want anything that's ever in chat.
+   The purchase order file that you gave me should go through the app somehow"*
+   and *"if she submits the order, it should make it right away and present it to
+   her as a set of download links in that order's screen and instructions."*
+   ⛔ Before this, the flow ended at a CSV in a folder on one machine and a
+   terminal command — which is the same defect as a routine that only writes a
+   transcript: the work happened somewhere nobody can reach.
+   ⛔ KeHE is deliberately absent here. Its order is the Sunday engine's, and a
+   second way to buy from KeHE is how one line gets ordered twice.
+   ══════════════════════════════════════════════════════════════════════════ */
+const VPO_KIND="newitem.drain_and_build_vendor_orders";
+const VPO_LIST="AgentJobs", VPO_QUEUE="PurchaseOrderQueue";
+const VPO_TERMINAL=new Set(["done","failed","refused","needs_human","cancelled"]);
+let VPO=null, VPO_BUSY=false, VPO_POLL=null, VPO_MSG="", VPO_JOBLIST=null, VPO_QID=null;
+
+/* ⛔⛔ THE REAL GATE IS ENTRA + SHAREPOINT, NOT THIS FUNCTION. boot() redirects to
+   sign-in when there is no token and every write below is a bearer-token Graph
+   call, so a signed-out visitor can post nothing — SharePoint refuses it. ⭐ This
+   exists for the case that actually bites: a tab left open overnight, whose
+   session expired, where the button LOOKS armed. Ruling: Jack, 2026-09-17 —
+   *"can we make sure that that button isn't activated unless the person is logged
+   in?"* ⛔ Do not present a disabled button as the security boundary. */
+function signedIn(){ try{ return loadToken()===true; }catch(_){ return false; } }
+
+async function vpoListId(name){
+  const j=await graph(`/sites/${CFG.siteId}/lists?$select=displayName,id`);
+  const l=(j.value||[]).find(x=>x.displayName===name);
+  if(!l) throw new Error(`the ${name} list does not exist`);
+  return l.id;
+}
+/* ⭐ POSTS ONLY — the supervisor owns State/Attempts/ClaimedBy/LeaseUntil from
+   here on. ⛔ Params is a JSON STRING, never an object, and ClaimedBy/LeaseUntil
+   are left OUT rather than sent empty (a blank LeaseUntil on a claimed row wedges
+   the lease reclaimer). Same contract as the Purchasing app's KeHE PO tab. */
+async function vpoPostJob(week){
+  if(!VPO_JOBLIST) VPO_JOBLIST=await vpoListId(VPO_LIST);
+  const f={Kind:VPO_KIND, Subject:String(week),
+    Params:JSON.stringify({order_sunday:String(week)}),
+    State:"queued", Attempts:0,
+    RequestedUtc:new Date().toISOString().slice(0,19)+"Z",
+    RequestedBy:account, Title:`${week}:${VPO_KIND}`};
+  const j=await graph(`/sites/${CFG.siteId}/lists/${VPO_JOBLIST}/items`,
+    {method:"POST",body:JSON.stringify({fields:f})});
+  return j.id;
+}
+/* ⛔ One setInterval, always cleared before another starts — two pollers racing to
+   write the same on-screen state is how a finished job reads as still running. */
+function vpoPoll(itemId){
+  if(VPO_POLL){ clearInterval(VPO_POLL); VPO_POLL=null; }
+  const tick=async()=>{
+    try{
+      const j=await graph(`/sites/${CFG.siteId}/lists/${VPO_JOBLIST}/items/${itemId}?expand=fields`);
+      const st=String((j.fields||{}).State||"");
+      VPO_MSG=`building… (${st||"queued"})`;
+      if(VPO_TERMINAL.has(st)){
+        if(VPO_POLL){ clearInterval(VPO_POLL); VPO_POLL=null; }
+        VPO_BUSY=false;
+        if(st==="done"){ VPO_MSG=""; VPO=null; await loadVpo(); }
+        else VPO_MSG=`⛔ the build ${st} — ${esc((j.fields||{}).Note||"no reason recorded")}`;
+      }
+      if(TAB==="done") render();
+    }catch(e){ /* ⚠️ a transient Graph error must not stop the poll */ }
+  };
+  tick();
+  VPO_POLL=setInterval(tick, 4000);
+}
+
+/* ⛔ A 404 is "not built yet", which is NOT an error and must not read as one.
+   Anything else IS an error and is shown — a sheet that silently fails to load
+   looks exactly like a week with no direct-vendor items. */
+async function loadVpo(){
+  const week=WEEK;
+  try{
+    const t=await getToken();
+    const p=`/VendorOrders/${week}/index.json`;
+    const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/root:${encodeURI(p)}:/content`,
+                        {headers:{Authorization:"Bearer "+t}});
+    if(r.status===404){ VPO={week, vendors:null}; return VPO; }
+    if(!r.ok) throw new Error(`${r.status} reading the purchase orders`);
+    const j=await r.json();
+    VPO={week, ...j};
+    return VPO;
+  }catch(e){ VPO={week, error:e.message}; return VPO; }
+}
+
+async function vpoBuild(){
+  if(!signedIn()){ VPO_MSG="⛔ sign in first."; render(); return; }
+  VPO_BUSY=true; VPO_MSG="asking the office Mac to build them…"; render();
+  try{
+    await getToken();                 /* ⛔ re-check HERE: the render-time check is
+                                         minutes old and a session can expire in
+                                         between. This throws on an expired one. */
+    const id=await vpoPostJob(WEEK);
+    vpoPoll(id);
+  }catch(e){
+    VPO_BUSY=false;
+    VPO_MSG=/sign|token|expired|401/i.test(e.message||"")
+      ? "⛔ your session expired — reload the page and sign in again, then press Build."
+      : `⛔ ${e.message}`;
+  }
+  render();
+}
+
+/* Download a published sheet through Graph with the viewer's own token. ⛔ Not a
+   plain link: the library is behind the sign-in, so an <a href> would 401. */
+async function vpoDownload(path, name){
+  try{
+    const t=await getToken();
+    const r=await fetch(`${GRAPH}/sites/${CFG.siteId}/drive/root:${encodeURI(path)}:/content`,
+                        {headers:{Authorization:"Bearer "+t}});
+    if(!r.ok) throw new Error(`${r.status}`);
+    const url=URL.createObjectURL(await r.blob());
+    const a=document.createElement("a"); a.href=url; a.download=name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){
+    VPO_MSG=`⛔ that file could not be downloaded (${e.message}) — it may have been `
+           +`rebuilt since this page loaded. Press Build again.`;
+    render();
+  }
+}
+
+/* ⛔⛔ IRREVERSIBLE, AND IT CLOSES EXACTLY WHAT THE SHEET PRINTED — the queue ids
+   the index recorded, never "whatever is pending now", which is a different set by
+   the time anyone presses this. A line closed by mistake can never be re-proposed:
+   that is how 40 approved items and 345 units were lost on 2026-09-06. */
+async function vpoPlaced(vendor){
+  const v=(VPO&&VPO.vendors||[]).find(x=>x.vendor===vendor);
+  if(!v) return;
+  if(!signedIn()){ VPO_MSG="⛔ sign in first."; render(); return; }
+  if(!confirm(`Mark the ${vendor} order as PLACED?\n\n`
+    +`${v.queue_ids.length} line(s), ${v.totals.units} units.\n\n`
+    +`⛔ This cannot be undone. Only do it once the order has really gone to the `
+    +`vendor — a line closed by mistake can never be re-proposed.`)) return;
+  VPO_BUSY=true; VPO_MSG=`closing ${v.queue_ids.length} line(s)…`; render();
+  try{
+    await getToken();
+    if(!VPO_QID) VPO_QID=await vpoListId(VPO_QUEUE);
+    const j=await graph(`/sites/${CFG.siteId}/lists/${VPO_QID}/items?expand=fields&$top=500`);
+    const by={}; for(const it of (j.value||[])) by[String((it.fields||{}).queue_id||"")]=it;
+    let n=0, missing=[];
+    for(const qid of v.queue_ids){
+      const it=by[qid];
+      if(!it){ missing.push(qid); continue; }
+      if(String((it.fields||{}).state||"")!=="pending") continue;   /* already closed */
+      await graph(`/sites/${CFG.siteId}/lists/${VPO_QID}/items/${it.id}/fields`,
+        {method:"PATCH",body:JSON.stringify({state:"ordered",
+          /* ⛔ `ordered_on`, a DATE — the column `order_queue.mark_ordered`
+             writes. An undeclared column is a bare HTTP 400 that loses the whole
+             write, which is how a day of decisions was destroyed on 2026-09-06. */
+          ordered_on:new Date().toISOString().slice(0,10),
+          note:`placed with ${vendor} by ${account} from the new-item app`})});
+      n++;
+    }
+    VPO_MSG=`✅ ${n} line(s) closed for ${vendor}.`
+      +(missing.length?`  ⛔ ${missing.length} queue line(s) named on the sheet were `
+        +`NOT found and are still open — tell Jack: ${esc(missing.slice(0,3).join(", "))}`:"");
+  }catch(e){
+    VPO_MSG=/sign|token|expired|401/i.test(e.message||"")
+      ? "⛔ your session expired — reload and sign in again. Nothing was closed."
+      : `⛔ ${e.message}`;
+  }
+  VPO_BUSY=false; VPO=null; await loadVpo(); render();
+}
+
+function vpoPanel(){
+  const dis=!signedIn()||VPO_BUSY;
+  const head=`<div class="vpohead"><b>Purchase orders for ${esc(WEEK)}</b>
+    <button class="primary" id="vpobuild" ${dis?"disabled":""}
+      title="${signedIn()?"":"sign in first"}">${VPO===null||!(VPO.vendors||[]).length
+        ?"Build the purchase orders":"Rebuild"}</button>
+    ${VPO_MSG?`<span class="mut">${VPO_MSG}</span>`:""}
+    ${signedIn()?"":`<span class="mut">⛔ you are signed out — reload the page.</span>`}</div>`;
+  if(VPO===null){
+    loadVpo().then(()=>{ if(TAB==="done") render(); });
+    return `<section class="card vpo">${head}<div class="mut">loading…</div></section>`;
+  }
+  if(VPO.error)
+    return `<section class="card vpo">${head}<div class="banner">⛔ ${esc(VPO.error)}</div></section>`;
+  const vs=VPO.vendors;
+  if(vs===null||!vs.length)
+    return `<section class="card vpo">${head}<div class="mut">
+      Nothing has been built for this week yet. ⭐ Press <b>Build the purchase
+      orders</b> — it turns your approvals into pre-orders and writes one sheet per
+      direct vendor, usually within a minute.
+      <br>⛔ KeHE items never appear here: they go on Sunday's KeHE order.</div></section>`;
+  return `<section class="card vpo">${head}
+    <div class="mut" style="margin:2px 0 10px">Built ${esc(String(VPO.built_at||"").replace("T"," "))}.
+      One sheet per vendor, with their own re-order codes.</div>
+    ${vs.map(v=>{
+      const t=v.totals||{}, f=v.finale||{};
+      return `<div class="vpov">
+        <div class="vpovh"><b>${esc(v.vendor)}</b>
+          <span class="mut">${t.lines} line(s) · ${t.units} units · ${money(t.value)}</span></div>
+        ${(v.blockers||[]).length?`<div class="banner">${v.blockers.map(esc).join("<br>")}</div>`:""}
+        <ol class="vpoi">
+          <li><b>Download the sheet</b> and send it to the vendor${
+            v.order_email?` — <code>${esc(v.order_email)}</code>`:
+            ` <span class="banner">⛔ we have no order address for them. Nothing here
+              can send it; find the address and tell Jack.</span>`}.
+            ${v.route&&v.route!=="manual"?`<span class="mut"> (their route is
+              <b>${esc(v.route)}</b>, but nothing sends automatically yet — do it by
+              hand.)</span>`:""}</li>
+          <li><b>Then</b> press <i>I placed this order</i> below, so these lines stop
+            coming back on next week's sheet.</li>
+          <li class="mut">Finale: ${f.ready||0} of ${t.lines} item(s) exist there.
+            ${(f.missing||0)?`⛔ The rest are new and are not in Finale until the
+              listing work finishes and someone imports the two Finale files — so
+              this order will not show as on-order there yet.`:""}</li>
+        </ol>
+        <div class="vporow">
+          <button class="ghost" data-vpodl="${esc(v.vendor)}" ${signedIn()?"":"disabled"}
+            >⬇ ${esc(v.file_name)}</button>
+          <button data-vpoplaced="${esc(v.vendor)}" ${dis?"disabled":""}
+            >I placed this order</button>
+        </div></div>`;}).join("")}
+  </section>`;
+}
 
 /* ── boot ─────────────────────────────────────────────────────────────── */
 /* ⭐ A FUNCTION, not an inline IIFE, so switching order week can re-run the whole
