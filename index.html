@@ -1543,13 +1543,20 @@ async function createBatch(){
   const pasted=(document.getElementById("bpaste")?.value||"").trim();
   const vendor=(document.getElementById("bvendor")?.value||"").trim();
   const sunday=(document.getElementById("bsunday")?.value||"").trim();
+  /* ⭐ ADDED 2026-09-21: PRE-ORDER — already placed directly with the vendor.
+     ⛔ These skip the weekly review entirely (there is no decision left to make)
+     and are never tied to an order week — see preorder_intake.py. */
+  const isPreorder=!!document.getElementById("bpreorder")?.checked;
   const st=document.getElementById("bstatus");
   if(!files.length && !pasted){
     st.textContent="⛔ attach at least one file, or paste some URLs."; return; }
-  /* ⛔ The order week is REQUIRED. `order_sunday` is the only thing separating one
-     week's decisions from another's — a batch with none publishes to no week at
-     all and looks, to Julia, exactly like a batch that failed. */
-  if(!sunday){ st.textContent="⛔ choose which order week these are for."; return; }
+  /* ⛔ The order week is REQUIRED for a normal candidate batch — `order_sunday` is
+     the only thing separating one week's decisions from another's, and a batch
+     with none publishes to no week at all and looks, to Julia, exactly like a
+     batch that failed. ⭐ A PRE-ORDER batch is never published to a review week at
+     all, so it needs none. */
+  if(!isPreorder && !sunday){
+    st.textContent="⛔ choose which order week these are for."; return; }
   BATCHBUSY=true;
   const btn=document.getElementById("bgo"); if(btn) btn.disabled=true;
   const id=newBatchId();
@@ -1560,8 +1567,9 @@ async function createBatch(){
     const lid=await intakeListId();
     await graph(`/sites/${CFG.siteId}/lists/${lid}/items`,{method:"POST",
       body:JSON.stringify({fields:{
-        Title:id, batch_id:id, state:"uploaded", order_sunday:sunday,
+        Title:id, batch_id:id, state:"uploaded", order_sunday:isPreorder?"":sunday,
         vendor_hint:vendor, pasted_text:pasted,
+        intake_kind:isPreorder?"preorder":"candidate",
         files_json:JSON.stringify(names), uploaded_by:account,
         uploaded_at:new Date().toISOString().slice(0,19)}})});
     /* ⛔⛔ THE CONFIRMATION MUST SURVIVE THE RE-RENDER THAT FOLLOWS IT. Setting the
@@ -1662,11 +1670,13 @@ function batchHtml(b){
              placeholder="${esc(x.value?("was: "+x.value):"your answer")}"
              style="width:min(420px,100%);padding:5px">
     </div>`;
+  const isPreorder=String(b.intake_kind||"").trim().toLowerCase()==="preorder";
   return `<section class="card" style="padding:12px;margin:10px 0">
     <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <b>${esc(b.batch_id)}</b>
+      ${isPreorder?`<span style="color:#b8860b;font-weight:600">⭐ PRE-ORDER</span>`:""}
       <span style="color:${tone}">${esc(badge)}</span>
-      <span class="mut">order ${esc(b.order_sunday||"—")}</span>
+      ${isPreorder?"":`<span class="mut">order ${esc(b.order_sunday||"—")}</span>`}
       <span class="mut">${b.candidates||0} item(s)${b.blocked?`, ${b.blocked} blocked`:""}</span>
       ${b.vendor_hint?`<span class="mut">vendor: ${esc(b.vendor_hint)}</span>`:""}
       <span class="mut">${esc(b.uploaded_by||"")}</span>
@@ -1702,14 +1712,25 @@ function fileChosen(){
     : `${list.length} files: ${list.map(x=>x.name).join(", ")}`;
 }
 
+/* ⭐ ADDED 2026-09-21: toggling PRE-ORDER hides the order-week picker (a pre-order
+   is never tied to a review week) and swaps the banner text. Called on load and on
+   every checkbox change. */
+function togglePreorderUI(){
+  const on=!!document.getElementById("bpreorder")?.checked;
+  const wk=document.getElementById("bsundayrow");
+  if(wk) wk.style.display=on?"none":"";
+}
+
 function renderAddItems(m){
   const weeks=(WEEKS||[]).map(w=>w.key);
   const opts=weeks.map(k=>`<option value="${esc(k)}"${k===WEEK?" selected":""}>${esc(k)}</option>`).join("");
   m.innerHTML=`
     <div class="banner">Upload whatever the vendor sent — a price list, a spec PDF,
-      a pile of URLs. ⛔ Nothing here approves or orders anything: the items join
-      the normal review list, at the top, and you decide them there like any other
-      candidate.</div>
+      a pile of URLs. ⛔ Nothing here approves or orders anything by itself: a
+      normal upload joins the review list, at the top, and you decide it there like
+      any other candidate. ⭐ Check <b>"already placed directly with the vendor"</b>
+      below for something you have ALREADY ordered — no review, no re-ordering; it
+      only triggers product creation and is tracked as incoming.</div>
     <section class="card" style="padding:12px;margin:10px 0">
       <h3 style="margin:0 0 8px">New upload</h3>
       <div style="display:flex;flex-direction:column;gap:8px;max-width:640px">
@@ -1724,8 +1745,18 @@ function renderAddItems(m){
             placeholder="https://… one per line, or anything else worth keeping"></textarea></label>
         <label>Supplier <span class="mut">— only if the file has no Supplier column</span>
           <input id="bvendor" placeholder="e.g. Ancient Nutrition" style="width:100%"></label>
-        <label>Which order week
-          <select id="bsunday">${opts}</select></label>
+        <div id="bsundayrow"><label>Which order week
+          <select id="bsunday">${opts}</select></label></div>
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+          <input type="checkbox" id="bpreorder" onchange="togglePreorderUI()"
+                 style="margin-top:3px">
+          <span><b>This is a pre-order</b> — already placed directly with the
+            vendor. <span class="mut">Skips the weekly review (there is nothing
+            left to decide); still triggers product creation and is tracked as
+            incoming, but the Sunday order build will NEVER re-order it. If your
+            file has a column for when it ships or arrives, it is used
+            automatically.</span></span>
+        </label>
         <div><button class="primary" id="bgo" onclick="createBatch()">Upload</button>
              <span id="bstatus" class="mut"></span></div>
       </div>
@@ -1737,6 +1768,7 @@ function renderAddItems(m){
     <div id="batchlist">${BATCHES===null?`<div class="mut">loading…</div>`
       :(BATCHES.length?BATCHES.map(batchHtml).join("")
         :`<div class="mut">nothing uploaded yet</div>`)}</div>`;
+  togglePreorderUI();
   if(BATCHES===null)
     loadBatches().then(b=>{BATCHES=b; if(TAB==="add") render();})
                  .catch(e=>{document.getElementById("batchlist").innerHTML=
