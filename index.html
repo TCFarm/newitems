@@ -1489,6 +1489,13 @@ function render(){
    ⭐ So a batch with only VERIFY questions publishes its candidates immediately
    rather than waiting on her. */
 let BATCHES=null, BATCHBUSY=false;
+/* ⛔⛔ FINDING 10 (2026-09-22 audit): the pre-order checkbox lived only in the
+   DOM, and `renderAddItems()` rebuilds #main's innerHTML from scratch after
+   every upload — so the checkbox silently reset to unchecked, and a SECOND
+   pre-order batch became an ordinary candidate with no warning. Same class as
+   the confirmation-message fix above `createBatch()`: state that matters must
+   survive the re-render that follows the action, not live only in the DOM. */
+let PREORDER_CHECKED=false;
 
 async function intakeListId(){
   if(INTAKE_LID) return INTAKE_LID;
@@ -1717,6 +1724,7 @@ function fileChosen(){
    every checkbox change. */
 function togglePreorderUI(){
   const on=!!document.getElementById("bpreorder")?.checked;
+  PREORDER_CHECKED=on;                /* ⛔ FINDING 10 — survives the re-render */
   const wk=document.getElementById("bsundayrow");
   if(wk) wk.style.display=on?"none":"";
 }
@@ -1749,7 +1757,7 @@ function renderAddItems(m){
           <select id="bsunday">${opts}</select></label></div>
         <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
           <input type="checkbox" id="bpreorder" onchange="togglePreorderUI()"
-                 style="margin-top:3px">
+                 ${PREORDER_CHECKED?" checked":""} style="margin-top:3px">
           <span><b>This is a pre-order</b> — already placed directly with the
             vendor. <span class="mut">Skips the weekly review (there is nothing
             left to decide); still triggers product creation and is tracked as
