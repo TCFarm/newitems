@@ -1601,20 +1601,88 @@ async function createBatch(){
 
 /* ⛔⛔ ANSWERS ARE SENT AS DATA, NEVER AS A DECISION. Saving an answer moves the
    batch to `answered`, and `manual_intake.py` RE-VALIDATES every one of them — a
-   typed UPC can be eleven digits too. ⭐ The page must not mark anything ready. */
+   typed UPC can be eleven digits too. ⭐ The page must not mark anything ready.
+
+   ⭐⭐ SUBMIT IS GATED ON THE BLOCKING QUESTIONS (ruling: Jack, 2026-09-24 — *"Can we
+   stop it from letting people click submit if there are blocking flags? If these are
+   not blocking, then it should clear the flags when she clicks submit"*). Julia's
+   2026-09-22 pre-order batch sat for two days: 6 blocking questions buried under 120
+   verify boxes, all free text, and nothing said which ones HAD to be answered.
+   · The button stays disabled until every blocking question has a usable answer
+     (`qAnswer` returns null for an empty or non-numeric one), and says how many remain.
+   · ⭐ Every VERIFY value left untouched is recorded as ACCEPTED (`_accepted`, a list
+     of `key|field|value`). The page hides accepted ones, and `manual_intake.process`
+     drops them, so they stop coming back on every re-parse. ⛔ Keyed on the VALUE too:
+     if the intake later derives something different, it is asked again.
+   · ⛔ On a batch that is already `ready` (published or drained) Submit only records
+     acceptance — it NEVER moves the state, or a drained pre-order would drain twice. */
+const NUMERIC_FIELDS=new Set(["case_pack","wholesale","order_qty","srp","map_price","case_cost"]);
+function qNorm(v){
+  const t=String(v??"").trim();
+  if(t!=="" && !isNaN(Number(t))) return String(Number(t));
+  return t;
+}
+function qSig(x){ return `${x.key||x.upc||"_batch"}|${x.field}|${qNorm(x.value)}`; }
+function qOptions(x){
+  if(Array.isArray(x.options) && x.options.length) return x.options.map(String);
+  /* ⭐ Batches parsed before options existed: the two values are quoted in the ask. */
+  if(/^Two files disagree/.test(x.ask||"")){
+    const m=[...String(x.ask).matchAll(/"([^"]+)"/g)].map(a=>a[1]);
+    if(m.length>=2) return [...new Set(m.slice(0,2))];
+  }
+  return null;
+}
+/* -> the answer typed/chosen for question element `el`, or null when there is none
+   (or it is not a usable number where a number is required). */
+function qAnswer(wrap){
+  const field=wrap.dataset.field;
+  const pick=wrap.querySelector("input[type=radio]:checked");
+  const other=wrap.querySelector("[data-other]");
+  const box=wrap.querySelector("[data-box]");
+  const chk=wrap.querySelector("input[type=checkbox][data-skip]");
+  let v=null;
+  if(chk) v=chk.checked?"SKIP":null;
+  else if(pick) v=pick.value==="__other"?(other?other.value.trim():""):pick.value;
+  else if(box) v=box.value.trim();
+  if(v===null||v==="") return null;
+  if(NUMERIC_FIELDS.has(field)){
+    const n=Number(String(v).replace(/[$,]/g,""));
+    if(!isFinite(n)||n<=0) return null;
+    v=String(n);
+  }
+  return v;
+}
+function refreshSubmit(batchId){
+  const sel=`[data-q][data-batch="${CSS.escape(batchId)}"]`;
+  const blk=[...document.querySelectorAll(sel)].filter(w=>w.dataset.sev==="blocking");
+  const left=blk.filter(w=>qAnswer(w)===null).length;
+  const btn=document.getElementById("qsub_"+batchId);
+  const lbl=document.getElementById("qleft_"+batchId);
+  if(btn) btn.disabled=left>0;
+  if(lbl) lbl.textContent=left
+    ?`⛔ ${left} blocking question${left===1?"":"s"} still need an answer before you can submit.`
+    :(blk.length?"✅ every blocking question is answered.":"");
+}
 async function saveAnswers(batchId){
   const b=(BATCHES||[]).find(x=>x.batch_id===batchId);
   if(!b) return;
   const st=document.getElementById("bstatus");
-  const answers={};
-  document.querySelectorAll(`[data-ans][data-batch="${CSS.escape(batchId)}"]`)
-    .forEach(el=>{
-      const v=(el.value||"").trim(); if(!v) return;
-      const key=el.dataset.key||"_batch", field=el.dataset.ans;
-      (answers[key]=answers[key]||{})[field]=v;
-    });
-  if(!Object.keys(answers).length){
-    st.textContent="⛔ nothing typed — answer at least one question first."; return; }
+  const wraps=[...document.querySelectorAll(`[data-q][data-batch="${CSS.escape(batchId)}"]`)];
+  /* ⛔ Re-checked at click time: a disabled button is a courtesy, never the control. */
+  const left=wraps.filter(w=>w.dataset.sev==="blocking" && qAnswer(w)===null);
+  if(left.length){
+    st.textContent=`⛔ ${left.length} blocking question(s) still need an answer.`; return; }
+  const answers={}, accepted=[];
+  for(const w of wraps){
+    const v=qAnswer(w);
+    if(v!==null){
+      (answers[w.dataset.key]=answers[w.dataset.key]||{})[w.dataset.field]=v;
+    }else if(w.dataset.sev!=="blocking"){
+      accepted.push(w.dataset.sig);            /* ⭐ untouched verify = accepted as is */
+    }
+  }
+  if(!Object.keys(answers).length && !accepted.length){
+    st.textContent="⛔ nothing to submit."; return; }
   try{
     const lid=await intakeListId();
     /* ⭐ MERGE with whatever was answered before, so a second pass does not
@@ -1622,11 +1690,19 @@ async function saveAnswers(batchId){
     const prev=(()=>{ try{ return JSON.parse(b.answers_json||"{}")||{}; }
                       catch(_){ return {}; } })();
     for(const k of Object.keys(answers)) prev[k]={...(prev[k]||{}), ...answers[k]};
+    prev._accepted=[...new Set([...(prev._accepted||[]), ...accepted])];
+    const state=String(b.state||"");
+    const fields={answers_json:JSON.stringify(prev)};
+    /* ⛔⛔ Only a batch still waiting on answers is sent back for re-checking. A
+       `ready` batch has already published or drained. */
+    if(state==="parsed"||state==="answered") fields.state="answered";
     await graph(`/sites/${CFG.siteId}/lists/${lid}/items/${b._id}/fields`,
-      {method:"PATCH", body:JSON.stringify(
-        {answers_json:JSON.stringify(prev), state:"answered"})});
-    st.textContent=`✅ answers saved for ${batchId}. They are re-checked on the `
-      +`next intake run — an answer is not taken on trust.`;
+      {method:"PATCH", body:JSON.stringify(fields)});
+    st.textContent=fields.state
+      ?`✅ submitted for ${batchId}. The answers are re-checked on the next intake run `
+        +`(within about 5 minutes) — an answer is not taken on trust.`
+        +(accepted.length?` ${accepted.length} value(s) we filled in were accepted as they are.`:"")
+      :`✅ ${accepted.length} value(s) accepted for ${batchId}.`;
     BATCHES=await loadBatches(); render();
   }catch(e){ st.textContent=`⛔ ${e.message}`; }
 }
@@ -1660,27 +1736,62 @@ async function abandonBatch(batchId){
 
 function batchHtml(b){
   let qs=[]; try{ qs=JSON.parse(b.questions_json||"[]")||[]; }catch(_){}
-  const blocking=qs.filter(q=>q.severity==="blocking");
-  const verify=qs.filter(q=>q.severity!=="blocking");
+  const prevAns=(()=>{ try{ return JSON.parse(b.answers_json||"{}")||{}; }catch(_){ return {}; } })();
+  const acc=new Set(prevAns._accepted||[]);
   const state=String(b.state||"");
+  /* ⭐ An accepted verify value is not shown again. ⛔ Blocking questions always are. */
+  const blocking=qs.filter(q=>q.severity==="blocking");
+  const verify=qs.filter(q=>q.severity!=="blocking" && q.field!=="more" && !acc.has(qSig(q)));
+  const more=qs.find(q=>q.field==="more");
   const badge={uploaded:"waiting to be read", parsed:"needs your answers",
                answered:"answers saved — re-checking", ready:"ready to review",
                abandoned:"abandoned"}[state]||state;
   const tone=state==="ready"?"var(--ok,#2e7d32)"
             :state==="parsed"?"var(--bad,#b3261e)":"var(--ink-2)";
-  const q=(x,i)=>`<div style="margin:8px 0;padding:8px;border-left:3px solid
-      ${x.severity==="blocking"?"#b3261e":"#b8860b"};background:rgba(0,0,0,.02)">
-      <div><b>${esc(x.ask)}</b>${x.description?` <span class="mut">— ${esc(x.description)}</span>`:""}</div>
+  const bid=esc(b.batch_id);
+  let n=0;
+  const q=(x)=>{
+    const id=`${b.batch_id}_${n++}`;
+    const sev=x.severity==="blocking"?"blocking":"verify";
+    const opts=qOptions(x);
+    const num=NUMERIC_FIELDS.has(x.field);
+    let ctl;
+    if(x.field==="carried" && sev==="blocking"){
+      /* ⭐ The ONLY safe answer: a product we already carry must not be created twice. */
+      ctl=`<label style="display:block;margin-top:4px"><input type="checkbox" data-skip
+             onchange="refreshSubmit('${bid}')"> <b>Drop it from this batch</b> — it is a
+             reorder of the product we already carry. Order it on the normal order.</label>
+           <div class="mut" style="font-size:12px">If this is NOT the same product, abandon
+             the batch and tell Jack — a UPC that matches the wrong product is a data fix.</div>`;
+    }else if(opts){
+      ctl=opts.map(o=>`<label style="margin-right:14px"><input type="radio" name="r_${esc(id)}"
+             value="${esc(o)}" onchange="refreshSubmit('${bid}')"> ${esc(o)}</label>`).join("")
+        +`<label><input type="radio" name="r_${esc(id)}" value="__other"
+             onchange="refreshSubmit('${bid}')"> other:</label>
+           <input data-other ${num?'type="number" min="0" step="any"':""} style="width:90px;padding:4px"
+             oninput="this.parentElement.querySelector('input[value=__other]').checked=true;refreshSubmit('${bid}')">`;
+    }else{
+      ctl=`<input data-box ${num?'type="number" min="0" step="any"':""}
+             placeholder="${esc(x.value?(sev==="verify"?("we used: "+x.value+" — type only to change it"):("was: "+x.value)):"your answer")}"
+             oninput="refreshSubmit('${bid}')" style="width:min(420px,100%);padding:5px">`;
+    }
+    return `<div data-q data-batch="${bid}" data-sev="${sev}" data-field="${esc(x.field)}"
+        data-key="${esc(x.key||x.upc||"_batch")}" data-sig="${esc(qSig(x))}"
+        style="margin:8px 0;padding:8px;border-left:3px solid
+        ${sev==="blocking"?"#b3261e":"#b8860b"};background:rgba(0,0,0,.02)">
+      ${x.description?`<div style="font-weight:600">${esc(x.description)}
+        <span class="mut" style="font-weight:400">${esc(x.upc||"")}</span></div>`:""}
+      <div>${esc(x.ask)}</div>
       <div class="mut" style="font-size:12px;margin:3px 0">${esc(x.why||"")}</div>
-      <input data-ans="${esc(x.field)}" data-batch="${esc(b.batch_id)}"
-             data-key="${esc(x.key||x.upc||"_batch")}"
-             placeholder="${esc(x.value?("was: "+x.value):"your answer")}"
-             style="width:min(420px,100%);padding:5px">
+      ${ctl}
     </div>`;
+  };
   const isPreorder=String(b.intake_kind||"").trim().toLowerCase()==="preorder";
+  const items=new Set(blocking.map(x=>x.key||x.upc)).size;
+  const canSubmit=state!=="abandoned" && (blocking.length||verify.length);
   return `<section class="card" style="padding:12px;margin:10px 0">
     <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-      <b>${esc(b.batch_id)}</b>
+      <b>${bid}</b>
       ${isPreorder?`<span style="color:#b8860b;font-weight:600">⭐ PRE-ORDER</span>`:""}
       <span style="color:${tone}">${esc(badge)}</span>
       ${isPreorder?"":`<span class="mut">order ${esc(b.order_sunday||"—")}</span>`}
@@ -1693,17 +1804,25 @@ function batchHtml(b){
     ${b.note?`<div class="mut" style="margin-top:6px">${esc(b.note)}</div>`:""}
     ${blocking.length?`<div style="margin-top:10px"><b>⛔ ${blocking.length}
        question${blocking.length===1?"":"s"} blocking this batch</b>
+       <span class="mut">(on ${items} item${items===1?"":"s"})</span>
        <div class="mut" style="font-size:12px">These cannot be worked out from the
        files — nothing proceeds until they are answered.</div>
        ${blocking.map(q).join("")}</div>`:""}
-    ${verify.length?`<div style="margin-top:10px"><b>${verify.length} to verify</b>
-       <div class="mut" style="font-size:12px">We filled these in ourselves. The
-       items are NOT held up — correct anything that is wrong.</div>
-       ${verify.map(q).join("")}</div>`:""}
-    ${qs.length?`<button class="primary" style="margin-top:8px"
-        onclick="saveAnswers('${esc(b.batch_id)}')">Save answers</button>`:""}
-    ${state==="abandoned"?"":`<button style="margin-top:8px;margin-left:8px"
-        onclick="abandonBatch('${esc(b.batch_id)}')">Abandon this batch</button>`}
+    ${verify.length?`<details style="margin-top:10px"${blocking.length?"":" open"}>
+       <summary><b>${verify.length} value${verify.length===1?"":"s"} we filled in ourselves</b>
+       <span class="mut">— optional. The items are NOT held up. Open to correct any that
+       are wrong; everything you leave alone is accepted when you submit.</span></summary>
+       ${verify.map(q).join("")}</details>`:""}
+    ${more?`<div class="mut" style="font-size:12px;margin-top:6px">${esc(more.ask)} They
+       appear here after you submit.</div>`:""}
+    ${canSubmit?`<div style="margin-top:10px">
+        <button class="primary" id="qsub_${bid}" onclick="saveAnswers('${bid}')"
+          ${blocking.length?"disabled":""}>${blocking.length?"Submit answers":"Accept these values"}</button>
+        <span id="qleft_${bid}" class="mut" style="margin-left:8px">${blocking.length
+          ?`⛔ ${blocking.length} blocking question${blocking.length===1?"":"s"} still need an answer before you can submit.`:""}</span>
+      </div>`:""}
+    ${state==="abandoned"?"":`<button style="margin-top:8px"
+        onclick="abandonBatch('${bid}')">Abandon this batch</button>`}
   </section>`;
 }
 
