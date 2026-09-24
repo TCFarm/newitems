@@ -1623,7 +1623,9 @@ function qNorm(v){
   return t;
 }
 function qSig(x){ return `${x.key||x.upc||"_batch"}|${x.field}|${qNorm(x.value)}`; }
+const FIXED_CHOICES={order_qty_unit:["CASES","UNITS"]};    /* no "other" for these */
 function qOptions(x){
+  if(FIXED_CHOICES[x.field]) return FIXED_CHOICES[x.field];
   if(Array.isArray(x.options) && x.options.length) return x.options.map(String);
   /* ⭐ Batches parsed before options existed: the two values are quoted in the ask. */
   if(/^Two files disagree/.test(x.ask||"")){
@@ -1766,10 +1768,12 @@ function batchHtml(b){
     }else if(opts){
       ctl=opts.map(o=>`<label style="margin-right:14px"><input type="radio" name="r_${esc(id)}"
              value="${esc(o)}" onchange="refreshSubmit('${bid}')"> ${esc(o)}</label>`).join("")
-        +`<label><input type="radio" name="r_${esc(id)}" value="__other"
+        +(FIXED_CHOICES[x.field]?"":`<label><input type="radio" name="r_${esc(id)}" value="__other"
              onchange="refreshSubmit('${bid}')"> other:</label>
            <input data-other ${num?'type="number" min="0" step="any"':""} style="width:90px;padding:4px"
-             oninput="this.parentElement.querySelector('input[value=__other]').checked=true;refreshSubmit('${bid}')">`;
+             oninput="this.parentElement.querySelector('input[value=__other]').checked=true;refreshSubmit('${bid}')">`)
+        +(sev==="verify"&&x.field==="order_qty_unit"?`<div class="mut" style="font-size:12px">Leave it and it stays
+             read as CASES.</div>`:"");
     }else{
       ctl=`<input data-box ${num?'type="number" min="0" step="any"':""}
              placeholder="${esc(x.value?(sev==="verify"?("we used: "+x.value+" — type only to change it"):("was: "+x.value)):"your answer")}"
