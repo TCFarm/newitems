@@ -1433,6 +1433,28 @@ function render(){
 }
 function _renderInner(){
   const m=document.getElementById("main");
+  /* ⛔⛔ FOUND 2026-09-27 (the real bug behind "click a tab, everything else
+     stops working" — confirmed live via the try/catch above, which surfaced
+     "Cannot read properties of null (reading 'meta')"): `PAYLOAD` starts `null`
+     and is only ever set once `switchWeek()`'s own fetch resolves — a real,
+     visible window on every load, and the FIRST thing that fires `render()`
+     during it crashes on `PAYLOAD.meta` (this branch, or `renderMarketMap()`'s
+     own unguarded reads). A tab click reassigns `TAB` and calls `render()`
+     UNCONDITIONALLY, with no regard for whether the week has finished loading
+     yet. Once it crashes, EVERY later click that reaches `render()` — any tab,
+     not just the one first clicked — hits the same wall, so the screen never
+     recovers until `switchWeek()` finishes on its own (or never does, if
+     boot() itself is stuck slow or failed, which reads identically from the
+     outside: nothing you click ever changes what's on screen). ⭐ FIX: check
+     BEFORE any tab-specific branch, including map/add, so none of them can
+     touch `PAYLOAD` before it exists — every tab stays inert but HONEST, and
+     once `switchWeek()` finishes its own `render()` call repaints correctly
+     with no further action needed. */
+  if(!PAYLOAD){
+    m.classList.remove("mapview");
+    m.innerHTML='<div class="center">loading the week…</div>';
+    return;
+  }
   // ⭐ the map is its own view — it does not share the row list, the decision
   // footer or the filters, so it short-circuits before any of that runs.
   if(TAB==="map"){ m.classList.add("mapview"); renderMarketMap(m); return; }
