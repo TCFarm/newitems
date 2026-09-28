@@ -1401,7 +1401,37 @@ function visible(){
                                          &&!r.demoted&&r.score!==null&&onPromo(r)).slice(0,60);
   return ROWS.filter(r=>!DECIDED[r.upc]&&!prior[r.upc]&&onPromo(r));
 }
+/* ⛔⛔ WRAPPED, 2026-09-27: `render()` used to run unguarded, called directly from
+   the document-level click delegate (`[data-tab]` -> `TAB=...; render();`) and
+   from several async callbacks (`vpoPanel()`'s `loadVpo().then(...)`, `vpoPoll()`'s
+   tick, etc). An exception ANYWHERE inside it — one bad row's field, a null the
+   fixture data never produced — threw UNCAUGHT: `m.innerHTML` is only assigned at
+   the very end of the function, so a mid-build throw left the OLD tab's markup on
+   screen, unchanged, looking like nothing happened. ⭐ Reported: clicking into
+   Decided and then other buttons "stop working" — consistent with exactly this:
+   the delegate's `[data-tab]` branch reassigns the global `TAB` and calls
+   `render()` BEFORE the throw, so `TAB` is left pointed at whatever view crashed,
+   and if that same view's render throws EVERY time (a persistently bad row/vendor
+   in `ROWS`/`VPO`, not a one-off), every subsequent click that re-enters `render()`
+   — including clicking a DIFFERENT tab, since `_renderInner()` reads the now-
+   already-reassigned `TAB` — fails the same way, and the screen never visibly
+   updates again. ⭐ FIX: catch it, show it, and never leave the screen silently
+   stuck — the same principle as `_shared`'s houserule that a session condition
+   must never look like "nothing to do". */
 function render(){
+  try{
+    _renderInner();
+  }catch(e){
+    console.error('render() failed:', e);
+    const m=document.getElementById("main");
+    if(m) m.innerHTML=`<div class="center banner">⛔ something went wrong showing
+      this screen (${esc((e&&e.message)||String(e))}).
+      <br><br><button class="primary" onclick="location.reload()">Reload the
+      page</button> — your saved decisions are safe; only this screen's
+      rendering failed.</div>`;
+  }
+}
+function _renderInner(){
   const m=document.getElementById("main");
   // ⭐ the map is its own view — it does not share the row list, the decision
   // footer or the filters, so it short-circuits before any of that runs.
