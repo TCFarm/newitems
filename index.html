@@ -52,6 +52,14 @@ main{padding:14px;max-width:1080px;margin:0 auto}
           display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:10px}
 .title{font-weight:620}
 .brand{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.02em}
+/* UPC on the collapsed row (Julia, 2026-09-29): she was retyping the description into
+   KeHE to find the product. user-select:all makes a single click select the whole code,
+   and the button copies it without opening the row. */
+.upcline{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:12px;color:var(--mut)}
+.upccode{font-variant-numeric:tabular-nums;user-select:all;cursor:text;color:var(--ink,inherit)}
+.cpbtn{font-size:11px;padding:1px 7px;border-radius:99px;border:1px solid var(--line);background:transparent;
+       color:var(--mut);cursor:pointer}
+.cpbtn.done{color:var(--ok);border-color:var(--ok)}
 .nums{margin-left:auto;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .big{font-size:15px;font-weight:650}
 .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
@@ -1193,6 +1201,7 @@ function factorChips(r){
   const c=[];
   if(r.on_promo) c.push('<span class="chip good">ON PROMO</span>');
   if(r.carried_state==="lapsed") c.push('<span class="chip warnc">BRING-BACK — we carried this before</span>');
+  if(r.we_list_similar&&r.we_list_similar.length) c.push(similarChip(r));
   if(r.storage==="R") c.push('<span class="chip warnc">REFRIGERATED — tightest space</span>');
   if(r.storage==="F") c.push('<span class="chip">frozen</span>');
   /* ⛔ `(undefined||0)===0` IS TRUE, so a manual row — which has no subcategory
@@ -1211,6 +1220,41 @@ function factorChips(r){
     c.push(`<span class="chip">#${r.subcat_pick_number} this week in ${esc(r.subcategory||"")}</span>`);
   return c.join("");
 }
+/* ⭐ The UPC, copyable, on the collapsed row. ⛔ Shown exactly as the payload carries
+   it (a 12-digit code with its leading zero) — never re-padded or trimmed, because a
+   code that differs from the supplier's is a lookup that silently finds nothing. */
+function upcLine(r){
+  const u=String(r.upc||"").trim();
+  if(!u) return "";
+  return `<div class="upcline" onclick="event.stopPropagation()">UPC <span class="upccode">${esc(u)}</span>`
+    + `<button type="button" class="cpbtn" data-cp="${esc(u)}" onclick="cpUpc(event,this)" `
+    + `aria-label="copy UPC ${esc(u)}">copy</button></div>`;
+}
+function cpUpc(ev,btn){
+  ev.stopPropagation();
+  const u=btn.dataset.cp, ok=()=>{btn.textContent="copied";btn.classList.add("done");
+    setTimeout(()=>{btn.textContent="copy";btn.classList.remove("done");},1200);};
+  const fallback=()=>{const t=document.createElement("textarea");t.value=u;
+    t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();
+    try{document.execCommand("copy");ok();}catch(e){btn.textContent="select it";}
+    document.body.removeChild(t);};
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText)
+         navigator.clipboard.writeText(u).then(ok,fallback);
+       else fallback(); }catch(e){ fallback(); }
+}
+/* ⭐ "We already list something like this" (Julia, 2026-09-29). ⛔ INFORMATION ONLY: the
+   carried test is keyed on UPC and a different UPC is a different item, so this never
+   hides or demotes a row — it tells the reviewer what to look at before approving. */
+function similarChip(r){
+  const s=(r.we_list_similar||[])[0];
+  if(!s) return "";
+  const more=(r.we_list_similar||[]).slice(1).map(x=>x.name).join(" · ");
+  const tip=esc(`${s.name}${s.upc?` (UPC ${s.upc})`:""}${s.active?"":" — inactive"}`
+    +(s.units_wk?` · ${fmt(s.units_wk,1)} u/wk`:"")+(more?` · also: ${more}`:""));
+  return s.same_size
+    ? `<span class="chip warnc" title="${tip}">we already list this: ${esc(s.name)} — same size, different UPC?</span>`
+    : `<span class="chip warnc" title="${tip}">we list it in another size: ${esc(s.name)}</span>`;
+}
 function rowHtml(r){
   const img=(r.rivir&&r.rivir.images&&r.rivir.images[0])
     ? `<img class="thumb" data-src="${esc(r.rivir.images[0])}" alt="" loading="lazy">`
@@ -1228,6 +1272,7 @@ function rowHtml(r){
      ${img}
      <div class="idcol"><div class="title">${esc(r.description||"(no description)")}</div>
        <div class="brand">${esc(r.brand||"")} · ${esc(r.subcategory||"")}</div>
+       ${upcLine(r)}
        <div class="chips">${factorChips(r)}</div></div>
      <div class="nums"><div class="big">${money(rPrice(r))}</div>
        <div class="sub">${fmt(r.proj_units_wk_calibrated,1)} u/wk${
