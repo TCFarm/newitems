@@ -294,7 +294,7 @@ details.tbl{margin-top:14px} details.tbl summary{cursor:pointer;color:var(--ink-
 <main id="main"><div class="center">Loading…</div></main>
 <div class="foot">
   <span id="tally" class="mut">no decisions yet</span>
-  <span class="mut" style="font-size:12px">⛔ nothing is saved until you press Submit</span>
+  <span class="mut" style="font-size:12px">⛔ nothing is saved until you press Submit — Submit sends it all the way through</span>
   <button class="primary" id="submit" disabled>Submit decisions</button>
   <span id="status" class="mut"></span>
 </div>
@@ -1546,7 +1546,8 @@ function _renderInner(){
       &middot; <b>${money(cash)}</b> committed at cost
       &middot; ${by("decline")} declined &middot; ${by("defer")} deferred
       &middot; ${by("question")} question(s).
-      <span class="mut">Nothing is ordered until the drain runs.</span>
+      <span class="mut">Submit sends every saved approval straight into the order
+        queue and the Listing Studio — there is no further step.</span>
       ${_other?`<br><b>${_other}</b> further item${_other===1?" was":"s were"}
         approved on an earlier week and are shown below — they are NOT counted
         above and need no decision here.`:""}</div>`;
@@ -3448,6 +3449,23 @@ document.getElementById("submit").addEventListener("click",async()=>{
     document.querySelectorAll(".tab").forEach(x=>
       x.setAttribute("aria-selected", x.dataset.tab==="done"));
   }
+  /* ⭐⭐ SUBMIT IS THE APPROVAL — IT FLOWS ALL THE WAY THROUGH (ruling: Jack,
+     2026-10-05: *"once the 'submit decisions' button is pressed, it needs to flow
+     all the way through for all decisions, not have any additional steps"* — a ✓
+     IS the approval to get it into that week's order queue AND start a Listing
+     Studio session). ⛔ Before this, a saved approval sat in NewItemReview until
+     the 19:00 `newitem-drain-daily` or a separate "Build the purchase orders"
+     press — so an approval made at 10am did nothing for nine hours.
+     ⭐ So every save that wrote ≥1 row posts the drain-and-build job itself: the
+     drain queues the pre-order lines (or cancels them, for a decline) and writes
+     ProductPipeline's input CSV, which its continuous `pipeline-worker` picks up
+     into the Listing Studio on its own; then the direct-vendor sheets are built.
+     ⛔ Posted even on a PARTIAL save — the rows that saved must not wait on the
+     ones that failed; the failed ones stay dirty and the retry Submit posts again.
+     ⛔ Two quick submits are safe: the job kind holds the `new-item-pipeline`
+     resource, so the supervisor runs them one after the other, and the drain
+     skips decisions already drained. */
+  if(ok>0) await vpoBuild({auto:true});
   tally(); render();
 });
 
@@ -3507,13 +3525,24 @@ function vpoPoll(itemId){
     try{
       const j=await graph(`/sites/${CFG.siteId}/lists/${VPO_JOBLIST}/items/${itemId}?expand=fields`);
       const st=String((j.fields||{}).State||"");
-      VPO_MSG=`building… (${st||"queued"})`;
+      VPO_MSG=`sending your decisions through… (${st||"queued"})`;
       if(VPO_TERMINAL.has(st)){
         if(VPO_POLL){ clearInterval(VPO_POLL); VPO_POLL=null; }
         VPO_BUSY=false;
-        if(st==="done"){ VPO_MSG=""; VPO=null; await loadVpo(); }
-        else VPO_MSG=`⛔ the build ${st} — ${esc((j.fields||{}).Note||"no reason recorded")}`;
+        if(st==="done"){
+          VPO_MSG="✅ done — approvals are in the order queue and handed to the "
+                 +"Listing Studio; declines cancelled any earlier line.";
+          VPO=null; await loadVpo();
+        }
+        else VPO_MSG=`⛔ sending your decisions through ${st} — `
+          +`${esc((j.fields||{}).Note||"no reason recorded")}. Your decisions ARE saved; `
+          +`press Re-run, and tell Jack if it fails again.`;
       }
+      /* ⭐ also in the footer: a partial save stays on the current tab, where the
+         Decided panel is not drawn, and the result must not be invisible there. */
+      { const fs=document.getElementById("status");
+        if(fs){ const t=document.createElement("div"); t.innerHTML=VPO_MSG;
+                fs.textContent=t.textContent; } }
       if(TAB==="done") render();
     }catch(e){ /* ⚠️ a transient Graph error must not stop the poll */ }
   };
@@ -3539,9 +3568,16 @@ async function loadVpo(){
   }catch(e){ VPO={week, error:e.message}; return VPO; }
 }
 
-async function vpoBuild(){
-  if(!signedIn()){ VPO_MSG="⛔ sign in first."; render(); return; }
-  VPO_BUSY=true; VPO_MSG="asking the office Mac to build them…"; render();
+/* ⭐ Called by Submit itself ({auto:true}) — the normal path — and by the Re-run
+   button, which exists only to retry a run that failed. */
+async function vpoBuild(opts){
+  const auto=!!(opts&&opts.auto);
+  if(!signedIn()){ VPO_MSG="⛔ you are signed out — your decisions saved, but nothing "
+    +"was sent through. Reload, sign in, and press Re-run."; render(); return; }
+  VPO_BUSY=true;
+  VPO_MSG=auto?"sending your decisions through — order queue, Listing Studio, vendor sheets…"
+              :"re-running…";
+  render();
   try{
     await getToken();                 /* ⛔ re-check HERE: the render-time check is
                                          minutes old and a session can expire in
@@ -3551,7 +3587,8 @@ async function vpoBuild(){
   }catch(e){
     VPO_BUSY=false;
     VPO_MSG=/sign|token|expired|401/i.test(e.message||"")
-      ? "⛔ your session expired — reload the page and sign in again, then press Build."
+      ? "⛔ your session expired — your decisions saved, but nothing was sent through. "
+        +"Reload, sign in again, then press Re-run."
       : `⛔ ${e.message}`;
   }
   render();
@@ -3571,7 +3608,7 @@ async function vpoDownload(path, name){
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(e){
     VPO_MSG=`⛔ that file could not be downloaded (${e.message}) — it may have been `
-           +`rebuilt since this page loaded. Press Build again.`;
+           +`rebuilt since this page loaded. Reload the page.`;
     render();
   }
 }
@@ -3621,10 +3658,12 @@ async function vpoPlaced(vendor){
 
 function vpoPanel(){
   const dis=!signedIn()||VPO_BUSY;
+  /* ⛔ NO "Build" BUTTON (ruling: Jack, 2026-10-05) — Submit does it. Re-run is a
+     small retry for a run that failed or a session that expired, never a step. */
   const head=`<div class="vpohead"><b>Purchase orders for ${esc(WEEK)}</b>
-    <button class="primary" id="vpobuild" ${dis?"disabled":""}
-      title="${signedIn()?"":"sign in first"}">${VPO===null||!(VPO.vendors||[]).length
-        ?"Build the purchase orders":"Rebuild"}</button>
+    ${VPO_BUSY?"":`<button class="ghost" id="vpobuild" ${dis?"disabled":""}
+      title="only needed if a run failed — Submit does this automatically"
+      >Re-run</button>`}
     ${VPO_MSG?`<span class="mut">${VPO_MSG}</span>`:""}
     ${signedIn()?"":`<span class="mut">⛔ you are signed out — reload the page.</span>`}</div>`;
   if(VPO===null){
@@ -3636,9 +3675,9 @@ function vpoPanel(){
   const vs=VPO.vendors;
   if(vs===null||!vs.length)
     return `<section class="card vpo">${head}<div class="mut">
-      Nothing has been built for this week yet. ⭐ Press <b>Build the purchase
-      orders</b> — it turns your approvals into pre-orders and writes one sheet per
-      direct vendor, usually within a minute.
+      Nothing has been sent through for this week yet. ⭐ <b>Submit decisions</b>
+      does it automatically — approvals go into the order queue and the Listing
+      Studio, and each direct vendor gets a sheet here, usually within a minute.
       <br>⛔ KeHE items never appear here: they go on Sunday's KeHE order.</div></section>`;
   return `<section class="card vpo">${head}
     <div class="mut" style="margin:2px 0 10px">Built ${esc(String(VPO.built_at||"").replace("T"," "))}.
