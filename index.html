@@ -3097,7 +3097,19 @@ function todayKey(){
 /* ⛔ An order Sunday that has already gone by. Its purchase opportunity is over,
    so it is never the right week to OPEN — though it stays selectable by hand,
    because "what did we decide back then" is a real question. */
-function weekIsPast(key){ return key < todayKey(); }
+/* ⭐ PM-3160 (ruling: Jack, 2026-10-23 — "This should open to the week that is still orderable, it is nearly useless to see the previous
+   week's sale that we can't order from"): an order week is past once its KeHE send cutoff — 10 pm Central on its Sunday — has passed,
+   not at midnight of the browser's own day. orderableSunday() = the soonest Sunday whose cutoff has not passed. Same rule as the staff
+   portal's NIModel.orderableSunday (staff-app public/new-items/model.js); keep the two identical. */
+function orderableSunday(){
+  const p={}; new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hourCycle:"h23",weekday:"short"})
+    .formatToParts(new Date()).forEach(x=>{p[x.type]=x.value;});
+  const dow=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(p.weekday), h=(+p.hour)%24;
+  const add=dow===0?(h>=22?7:0):7-dow;
+  const base=new Date(`${p.year}-${p.month}-${p.day}T00:00:00Z`).getTime();
+  return new Date(base+add*86400000).toISOString().slice(0,10);
+}
+function weekIsPast(key){ return key < orderableSunday(); }
 
 /* ⛔⛔ DEFAULT TO THE NEXT ORDER SUNDAY, NOT THE NEWEST WEEK AND NOT THE ONE WITH
    WORK IN IT (fixed 2026-09-11, Jack: *"can you get the new item app to default
@@ -3116,20 +3128,32 @@ function weekIsPast(key){ return key < todayKey(); }
    ahead that has work > everything is in the past, so the newest.
    ⛔ "Earliest ahead", not "newest": with two weeks live the imminent one is the
    decision and the further one is context. */
+let WEEK_MISSING=null;
 function pickWeek(){
-  if(WANT_SUNDAY&&WEEKS.some(w=>w.key===WANT_SUNDAY))
-    return {key:WANT_SUNDAY, reason:"the week named in the link you followed"};
+  /* ⛔ PM-3160 review: the page writes ?sunday= and the session choice on EVERY load, so a reload or bookmark the next day named a
+     week whose order had gone. A link or memory still wins — but only while its week can still be ordered. */
+  let past=null;
+  if(WANT_SUNDAY&&WEEKS.some(w=>w.key===WANT_SUNDAY)){
+    if(!weekIsPast(WANT_SUNDAY)) return {key:WANT_SUNDAY, reason:"the week named in the link you followed"};
+    past=WANT_SUNDAY;
+  }
   let mem=null; try{ mem=sessionStorage.getItem(WEEK_MEM); }catch(_){}
-  if(mem&&WEEKS.some(w=>w.key===mem))
+  if(mem&&WEEKS.some(w=>w.key===mem)&&!weekIsPast(mem))
     return {key:mem, reason:"the week you chose earlier in this session"};
+  const r=pickDefault();
+  if(past) r.reason=`the link named ${past}, which has passed — ${r.reason}; ${past} is still in the week list`;
+  return r;
+}
+function pickDefault(){
   /* ascending — WEEKS is newest-first, so reverse for "soonest ahead" */
   const ahead=WEEKS.filter(w=>!weekIsPast(w.key)).slice().reverse();
+  /* ⛔ PM-3160: the orderable week ALWAYS wins over "a later week you already started" — a decision on the look-ahead must not
+     hide the week whose order goes out next. If the orderable week was never published, say so (WEEK_MISSING) — never silently. */
+  const want=orderableSunday();
+  WEEK_MISSING=ahead.some(w=>w.key===want)?null:want;
   if(ahead.length){
-    const started=ahead.find(w=>savedCount(w.key)>0);
-    if(started)
-      return {key:started.key,
-              reason:"the soonest order week you have already started"};
-    return {key:ahead[0].key, reason:"the next order week"};
+    if(ahead[0].key===want) return {key:want, reason:"the week you can still order (its KeHE order goes out by 10 pm Central that Sunday)"};
+    return {key:ahead[0].key, reason:`⚠️ the week you can order now (${want}) has NOT been published — tell Jack. This is the next published week`};
   }
   return {key:WEEKS[0].key,
           reason:"every published week has passed — this is the newest"};
@@ -3163,15 +3187,18 @@ function paintWeeks(){
        you are meant to decide, and the later one is the look-ahead. A warning
        that fires on the correct behaviour teaches people to ignore warnings. */
     const stale=!!(WEEK!=null&&weekIsPast(WEEK));
-    note.className=stale?"weeknote stale":"weeknote";
-    note.innerHTML=stale
+    /* ⛔ PM-3160 review: a never-published orderable week is SAID, loudly, on every paint (not only on the default pick) */
+    const want=orderableSunday(), missing=!WEEKS.some(w=>w.key===want);
+    note.className=(stale||missing)?"weeknote stale":"weeknote";
+    note.innerHTML=(missing?`⚠️ the week you can order now (<b>${esc(want)}</b>) has NOT been published — tell Jack. `
+        +`Its new-item review is normally built the Monday before. Showing ${esc(WEEK||"—")}. `:"")+(stale
       ? `⚠️ this order week (<b>${esc(WEEK)}</b>) has PASSED — its purchase `
         +`opportunity is over, so decisions here cannot reach an order. `
         +`${esc(WEEK_REASON)}.`
       : (WEEKS.length>1
           ? `${WEEKS.length} weeks published · ${esc(WEEK_REASON)}. Each week saves `
             +`separately.`
-          : `${esc(WEEK_REASON)}.`);
+          : `${esc(WEEK_REASON)}.`));
   }
 }
 /* ⭐ Would pressing Submit change what the store holds? ⛔ `Object.keys(DECIDED)`
